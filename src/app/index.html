@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  
+  <!-- Basic PWA Meta Tags -->
+  <title>CityBus Go - Live Bus Tracking</title>
+  <meta name="description" content="Real-time bus tracking app for drivers and commuters. Track buses, manage routes, and never miss your ride." />
+  <meta name="theme-color" content="#3b82f6" />
+  
+  <!-- Apple PWA Support -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="CityBus Go" />
+  
+  <!-- Apple Touch Icons -->
+  <link rel="apple-touch-icon" sizes="72x72" href="/icon-72x72.png" />
+  <link rel="apple-touch-icon" sizes="96x96" href="/icon-96x96.png" />
+  <link rel="apple-touch-icon" sizes="144x144" href="/icon-144x144.png" />
+  <link rel="apple-touch-icon" sizes="192x192" href="/citybus-192.png" />
+  
+  <!-- Microsoft Tiles -->
+  <meta name="msapplication-TileColor" content="#3b82f6" />
+  <meta name="msapplication-TileImage" content="/icon-144x144.png" />
+  <meta name="msapplication-config" content="/browserconfig.xml" />
+  <meta name="msapplication-square70x70logo" content="/icon-72x72.png" />
+  <meta name="msapplication-square150x150logo" content="/icon-144x144.png" />
+  <meta name="msapplication-wide310x150logo" content="/citybus-192.png" />
+  <meta name="msapplication-square310x310logo" content="/citybus-512.png" />
+  
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json" />
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/citybus-icon.svg" />
+  
+  <!-- Preconnect for performance -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  
+  <!-- Security Headers -->
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta http-equiv="X-Frame-Options" content="DENY" />
+  <meta http-equiv="X-XSS-Protection" content="1; mode=block" />
+  
+  <!-- OG Tags for Social Sharing -->
+  <meta property="og:title" content="CityBus Go - Live Bus Tracking" />
+  <meta property="og:description" content="Real-time bus tracking app for drivers and commuters" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="/citybus-192.png" />
+  <meta property="og:url" content="https://citybus-go.example.com" />
+  
+  <!-- Twitter Cards -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="CityBus Go - Live Bus Tracking" />
+  <meta name="twitter:description" content="Real-time bus tracking app for drivers and commuters" />
+  <meta name="twitter:image" content="/citybus-192.png" />
+  
+  <!-- Splash Screen for iOS -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="apple-touch-startup-image" href="/citybus-512.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)" />
+</head>
+<body>
+  <div id="root"></div>
+  
+  <!-- Service Worker Registration -->
+  <script>
+    // Check for service worker support
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((registration) => {
+            console.log('SW registered: ', registration);
+          })
+          .catch((registrationError) => {
+            console.log('SW registration failed: ', registrationError);
+          });
+      });
+    }
+
+    // Handle install prompt
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+    });
+
+    // URL parameters for shortcuts
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('driver') === 'true') {
+      // Navigate to driver portal automatically
+      localStorage.setItem('pwa-shortcut', 'driver');
+    } else if (urlParams.get('commuter') === 'true') {
+      // Navigate to commuter search automatically
+      localStorage.setItem('pwa-shortcut', 'commuter');
+    }
+  </script>
+  
+  <!-- Module script would be injected here by the build system -->
+</body>
+</html>
