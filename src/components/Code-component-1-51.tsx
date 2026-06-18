@@ -33,12 +33,12 @@ export default function MapScreen({ trackingBus, onShowScreen }: MapScreenProps)
         // Load CSS
         const link = document.createElement('link');
         link.rel = 'stylesheet';
-        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        link.href = 'https://unpkg.com/leaflet/dist/leaflet.css';
         document.head.appendChild(link);
 
         // Load JS
         const script = document.createElement('script');
-        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        script.src = 'https://unpkg.com/leaflet/dist/leaflet.js';
         
         return new Promise<void>((resolve) => {
           script.onload = () => resolve();

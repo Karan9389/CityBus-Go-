@@ -5,8 +5,9 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ArrowLeft, Phone, Lock, LogIn, Home } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useForm } from 'react-hook-form@7.55.0';
+import { useForm } from 'react-hook-form';
 import type { Screen, Driver } from '../App';
+import { loginDriverApi, setDriverAuth, getLocalDriver, setLocalDriver } from '../utils/auth';
 
 interface DriverLoginProps {
   onShowScreen: (screen: Screen) => void;
@@ -22,47 +23,70 @@ interface LoginFormData {
 }
 
 export default function DriverLogin({ onShowScreen, onGoBack, onDriverLogin, onShowNotification, onGoHome }: DriverLoginProps) {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginFormData>();
+  const { register, handleSubmit, formState: { errors, isSubmitting }, setError, clearErrors } = useForm<LoginFormData>();
 
-  const onSubmit = (data: LoginFormData) => {
+  const onSubmit = async (data: LoginFormData) => {
     try {
-      // Check in individual driver storage first
-      let driverData = localStorage.getItem(`driver_${data.phone}`);
-      let driver = null;
-      
-      if (driverData) {
-        driver = JSON.parse(driverData);
-      } else {
-        // Check in registered_drivers array (admin created drivers)
-        const storedDrivers = localStorage.getItem('registered_drivers');
-        if (storedDrivers) {
-          const allDrivers = JSON.parse(storedDrivers);
-          driver = allDrivers.find((d: Driver) => d.phone === data.phone);
-        }
-      }
-      
-      if (driver) {
-        // Driver exists, check password
-        if (driver.password === data.password) {
-          // Correct credentials - login successfully
-          onDriverLogin(driver);
-          
-          // Check if route is already configured
-          const routeConfig = localStorage.getItem(`route_config_${driver.phone}`);
+      clearErrors(['phone', 'password']);
+      const localDriver = getLocalDriver(data.phone);
+      let backendLoginUnavailable = false;
+
+      if (navigator.onLine) {
+        try {
+          const authPayload = await loginDriverApi(data.phone, data.password);
+          setDriverAuth(authPayload);
+          setLocalDriver({ ...authPayload.driver, password: data.password });
+          onDriverLogin(authPayload.driver);
+
+          const routeConfig = localStorage.getItem(`route_config_${authPayload.driver.phone}`);
           if (routeConfig) {
             onShowScreen('driverDashboard');
-            onShowNotification(`Welcome back, ${driver.name}! 🚌`);
+            onShowNotification(`Welcome back, ${authPayload.driver.name}! 🚌`);
           } else {
             onShowScreen('driverConfig');
-            onShowNotification(`Welcome back, ${driver.name}! Please configure your route.`);
+            onShowNotification(`Welcome back, ${authPayload.driver.name}! Please configure your route.`);
+          }
+          return;
+        } catch (error: any) {
+          const message = error?.message || 'Login failed';
+          if (message.includes('Invalid phone number') || message.includes('Invalid phone') || message.includes('password')) {
+            setError('phone', { type: 'manual', message: 'Invalid phone number or password' });
+            setError('password', { type: 'manual', message: 'Invalid phone number or password' });
+            onShowNotification('Incorrect phone number or password. Please try again.');
+            return;
+          }
+
+          if (message.toLowerCase().includes('fetch') || message.toLowerCase().includes('network') || message.toLowerCase().includes('failed to fetch') || message.toLowerCase().includes('failed')) {
+            backendLoginUnavailable = true;
+            console.warn('Backend auth server may be unreachable:', error);
+            onShowNotification('Unable to reach authentication server. Trying local login if available.');
+          } else {
+            console.warn('Backend login failed, falling back to local credentials if available:', error);
+          }
+        }
+      }
+
+      if (localDriver) {
+        if (localDriver.password === data.password) {
+          onDriverLogin(localDriver);
+          const routeConfig = localStorage.getItem(`route_config_${localDriver.phone}`);
+          if (routeConfig) {
+            onShowScreen('driverDashboard');
+            onShowNotification(`Welcome back, ${localDriver.name}! 🚌`);
+          } else {
+            onShowScreen('driverConfig');
+            onShowNotification(`Welcome back, ${localDriver.name}! Please configure your route.`);
           }
         } else {
-          // Driver exists but wrong password
-          onShowNotification('Incorrect credentials');
+          setError('password', { type: 'manual', message: 'Wrong password' });
+          onShowNotification('Incorrect details. Please check your phone number and password.');
         }
+      } else if (backendLoginUnavailable) {
+        setError('phone', { type: 'manual', message: 'Authentication server unavailable' });
+        onShowNotification('Authentication server is unavailable and no local account exists. Please register or try again later.');
       } else {
-        // Driver account not found
-        onShowNotification('User does not exist');
+        setError('phone', { type: 'manual', message: 'User is not registered' });
+        onShowNotification('User is not registered. Please sign up or check your phone number.');
       }
     } catch (error) {
       console.error('Login error:', error);

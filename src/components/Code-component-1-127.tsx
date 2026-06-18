@@ -5,7 +5,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ArrowLeft, User, Phone, Lock, Save, Shield } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useForm } from 'react-hook-form@7.55.0';
+import { useForm } from 'react-hook-form';
 import type { Screen, Driver } from '../App';
 
 interface DriverEditProps {
@@ -73,6 +73,7 @@ export default function DriverEdit({ loggedInDriver, onGoBack, onDriverUpdate, o
 
     // Update driver data
     const updatedDriver: Driver = {
+      id: loggedInDriver.id,
       name: data.name,
       phone: data.phone,
       password: data.newPassword || loggedInDriver.password

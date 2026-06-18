@@ -5,7 +5,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ArrowLeft, Phone, Lock, LogIn, Home } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useForm } from 'react-hook-form@7.55.0';
+import { useForm } from 'react-hook-form';
 import type { Screen, Driver } from '../App';
 
 interface DriverLoginProps {

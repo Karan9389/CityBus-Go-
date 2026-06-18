@@ -5,8 +5,9 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ArrowLeft, User, Phone, Lock, UserPlus, Bus, MapPin, Clock, Home, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useForm } from 'react-hook-form@7.55.0';
+import { useForm } from 'react-hook-form';
 import type { Screen, Driver } from '../App';
+import { registerDriverApi, loginDriverApi, setDriverAuth, setLocalDriver } from '../utils/auth';
 
 interface DriverRegisterProps {
   onShowScreen: (screen: Screen) => void;
@@ -37,7 +38,7 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
   
   const password = watch('password');
 
-  const onSubmit = (data: RegisterFormData) => {
+  const onSubmit = async (data: RegisterFormData) => {
     if (step === 1) {
       // Move to step 2
       setStep(2);
@@ -60,15 +61,7 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
       return;
     }
 
-    // Save driver data
-    const driverData = {
-      id: `driver_${Date.now()}`,
-      name: data.name,
-      phone: data.phone,
-      password: data.password
-    };
-    
-    // Save route configuration
+    // Save route configuration locally
     const validStops = routeData.stops.filter(stop => stop.trim());
     const routeConfig = {
       routeId: routeData.routeId.trim(),
@@ -76,13 +69,32 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
       endTime: routeData.endTime,
       stops: validStops
     };
-    
-    localStorage.setItem(`driver_${data.phone}`, JSON.stringify(driverData));
     localStorage.setItem(`route_config_${data.phone}`, JSON.stringify(routeConfig));
-    
-    // Auto-login and redirect to dashboard
-    onDriverLogin(driverData);
-    onShowNotification(`🎉 Welcome aboard, ${data.name}! Your account has been created successfully.`);
+
+    const localDriverData = {
+      id: `driver_${Date.now()}`,
+      name: data.name,
+      phone: data.phone,
+      password: data.password
+    };
+
+    setLocalDriver(localDriverData);
+    let loggedDriver = localDriverData;
+
+    if (navigator.onLine) {
+      try {
+        await registerDriverApi(data.name, data.phone, data.password);
+        const authPayload = await loginDriverApi(data.phone, data.password);
+        setDriverAuth(authPayload);
+        loggedDriver = { ...authPayload.driver, password: data.password };
+        setLocalDriver(loggedDriver);
+      } catch (error: any) {
+        console.warn('Backend registration failed, falling back to offline storage:', error?.message || error);
+      }
+    }
+
+    onDriverLogin(loggedDriver);
+    onShowNotification(`🎉 Welcome aboard, ${loggedDriver.name}! Your account has been created successfully.`);
     onShowScreen('driverDashboard');
   };
 

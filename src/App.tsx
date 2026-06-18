@@ -4,7 +4,7 @@ import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Badge } from './components/ui/badge';
 import { Avatar, AvatarFallback } from './components/ui/avatar';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { ArrowLeft, MapPin, Users, Bus, Navigation, UserCog, Search, Play, Square, Clock, Route } from 'lucide-react';
 
 import WelcomeScreen from './components/WelcomeScreen';

@@ -4,8 +4,9 @@ import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Badge } from './components/ui/badge';
 import { Avatar, AvatarFallback } from './components/ui/avatar';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { ArrowLeft, MapPin, Users, Bus, Navigation, UserCog, Search, Play, Square, Clock, Route } from 'lucide-react';
+import { getDriverAuth, clearDriverAuth } from './utils/auth';
 
 import WelcomeScreen from './components/WelcomeScreen';
 import DriverLogin from './components/DriverLogin';
@@ -118,6 +119,7 @@ export default function App() {
   };
 
   const goHome = () => {
+    clearDriverAuth();
     setLoggedInDriver(null);
     setLoggedInAdmin(null);
     setSelectedDriverId('');
@@ -127,6 +129,18 @@ export default function App() {
   const showNotification = (message: string) => {
     toast(message);
   };
+
+  useEffect(() => {
+    const auth = getDriverAuth();
+    if (auth?.driver) {
+      setLoggedInDriver(auth.driver);
+      const routeConfig = localStorage.getItem(`route_config_${auth.driver.phone}`);
+      const initialScreen: Screen = routeConfig ? 'driverDashboard' : 'driverConfig';
+      setScreenHistory([initialScreen]);
+      setCurrentScreen(initialScreen);
+      toast(`Welcome back, ${auth.driver.name}!`);
+    }
+  }, []);
 
   return (
     <>
