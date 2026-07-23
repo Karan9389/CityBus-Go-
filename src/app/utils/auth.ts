@@ -9,6 +9,7 @@ console.debug('[Auth] API base URL:', API_BASE_URL);
 export interface DriverAuthPayload {
   token: string;
   driver: Driver;
+  routeConfig?: RouteConfig;
 }
 
 export interface LocalDriver extends Driver {
@@ -34,6 +35,7 @@ export const loginDriverApi = async (phone: string, password: string): Promise<D
   return {
     token: data.token,
     driver: data.driver,
+    routeConfig: data.routeConfig
   };
 };
 
@@ -51,6 +53,47 @@ export const registerDriverApi = async (name: string, phone: string, password: s
     throw new Error(data?.message || 'Registration failed');
   }
 
+  return data;
+};
+
+export const saveRouteConfigApi = async (token: string, config: RouteConfig): Promise<RouteConfig> => {
+  const response = await fetch(`${API_BASE_URL}/api/driver/route`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(config),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || 'Failed to save route configuration');
+  }
+
+  return data.routeConfig;
+};
+
+export const searchBusesApi = async (start: string, destination: string): Promise<RouteConfig[]> => {
+  const response = await fetch(`${API_BASE_URL}/api/buses/search?start=${encodeURIComponent(start)}&destination=${encodeURIComponent(destination)}`);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || 'Failed to search buses');
+  }
+  return data;
+};
+
+export const adminLoginApi = async (username: string, password: string) => {
+  const response = await fetch(`${API_BASE_URL}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || 'Admin login failed');
+  }
   return data;
 };
 
