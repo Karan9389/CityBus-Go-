@@ -6,6 +6,8 @@ import { Avatar, AvatarFallback } from './ui/avatar';
 import { MapPin, Navigation, Square, LogOut, User, Bus, Clock, Route, Edit } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { Screen, Driver, RouteConfig } from '../App';
+import { getDriverAuth } from '../utils/auth';
+import { emitDriverLocation, emitStopTracking } from '../../services/socketService';
 
 interface DriverDashboardProps {
   loggedInDriver: Driver | null;
@@ -19,12 +21,42 @@ export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout
   const [routeConfig, setRouteConfig] = useState<RouteConfig | null>(null);
 
   useEffect(() => {
-    if (loggedInDriver) {
-      const config = localStorage.getItem(`route_config_${loggedInDriver.phone}`);
-      if (config) {
-        setRouteConfig(JSON.parse(config));
+    const fetchRouteConfig = async () => {
+      const auth = getDriverAuth();
+      if (auth?.token) {
+        try {
+          const res = await fetch('http://localhost:5000/api/driver/route', {
+            headers: { 'Authorization': `Bearer ${auth.token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.routeId) {
+              setRouteConfig({
+                routeId: data.routeId,
+                startTime: data.startTime,
+                endTime: data.endTime,
+                stops: data.stops
+              });
+              if (loggedInDriver) {
+                localStorage.setItem(`route_config_${loggedInDriver.phone}`, JSON.stringify(data));
+              }
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn("Could not fetch remote route config from MongoDB:", err);
+        }
       }
-    }
+
+      if (loggedInDriver) {
+        const config = localStorage.getItem(`route_config_${loggedInDriver.phone}`);
+        if (config) {
+          setRouteConfig(JSON.parse(config));
+        }
+      }
+    };
+
+    fetchRouteConfig();
   }, [loggedInDriver]);
 
   const startSharingLocation = () => {
@@ -32,20 +64,34 @@ export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
+        const { latitude, longitude, speed, heading } = position.coords;
+        const timestamp = position.timestamp || Date.now();
+
         const locationData = {
+          routeId: routeConfig.routeId,
           lat: latitude,
           lng: longitude,
-          timestamp: new Date().getTime()
+          speed: speed || 0,
+          heading: heading || 0,
+          timestamp: timestamp
         };
-        localStorage.setItem(`bus_location_${routeConfig.routeId}`, JSON.stringify(locationData));
+
+        // Stream via WebSockets to backend server (which updates MongoDB)
+        emitDriverLocation(locationData);
+
+        // Cache locally for offline fallback
+        localStorage.setItem(`bus_location_${routeConfig.routeId}`, JSON.stringify({
+          lat: latitude,
+          lng: longitude,
+          timestamp
+        }));
       },
       (error) => {
-        console.error("Error getting location:", error);
+        console.error("Error getting driver GPS location:", error);
         setIsSharing(false);
         setLocationWatcherId(null);
       },
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
 
     setLocationWatcherId(watchId);
@@ -57,6 +103,9 @@ export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout
       navigator.geolocation.clearWatch(locationWatcherId);
       setLocationWatcherId(null);
       setIsSharing(false);
+      if (routeConfig) {
+        emitStopTracking(routeConfig.routeId);
+      }
     }
   };
 

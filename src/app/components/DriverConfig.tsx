@@ -8,6 +8,7 @@ import { ArrowLeft, Bus, Clock, MapPin, Plus, X, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useForm } from 'react-hook-form';
 import type { Screen, Driver } from '../App';
+import { saveRouteConfigApi, getDriverAuth } from '../utils/auth';
 
 interface DriverConfigProps {
   loggedInDriver: Driver | null;
@@ -40,7 +41,7 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
     setStops(stops.filter((_, i) => i !== index));
   };
 
-  const onSubmit = (data: ConfigFormData) => {
+  const onSubmit = async (data: ConfigFormData) => {
     if (!loggedInDriver) return;
     
     if (stops.length < 2) {
@@ -49,14 +50,27 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
     }
 
     const routeConfig = {
-      routeId: data.busNumber,
-      startTime: data.startTime,
-      endTime: data.endTime,
-      stops: stops
+      routeId: data.busNumber.trim(),
+      startTime: data.startTime.trim(),
+      endTime: data.endTime.trim(),
+      stops: stops.map(s => s.trim()).filter(Boolean)
     };
 
+    const auth = getDriverAuth();
+    if (auth?.token) {
+      try {
+        await saveRouteConfigApi(auth.token, routeConfig);
+        localStorage.setItem(`route_config_${loggedInDriver.phone}`, JSON.stringify(routeConfig));
+        onShowNotification("✅ Route saved successfully into database!");
+        onShowScreen('driverDashboard');
+        return;
+      } catch (error: any) {
+        console.warn("Saving to backend failed, storing locally:", error?.message || error);
+      }
+    }
+
     localStorage.setItem(`route_config_${loggedInDriver.phone}`, JSON.stringify(routeConfig));
-    onShowNotification("Route configured successfully!");
+    onShowNotification("Route saved locally.");
     onShowScreen('driverDashboard');
   };
 

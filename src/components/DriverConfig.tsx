@@ -40,7 +40,7 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
     setStops(stops.filter((_, i) => i !== index));
   };
 
-  const onSubmit = (data: ConfigFormData) => {
+  const onSubmit = async (data: ConfigFormData) => {
     if (!loggedInDriver) return;
     
     if (stops.length < 2) {
@@ -49,15 +49,38 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
     }
 
     const routeConfig = {
-      routeId: data.busNumber,
-      startTime: data.startTime,
-      endTime: data.endTime,
-      stops: stops
+      routeId: data.busNumber.trim(),
+      startTime: data.startTime.trim(),
+      endTime: data.endTime.trim(),
+      stops: stops.map(s => s.trim()).filter(Boolean)
     };
 
-    localStorage.setItem(`route_config_${loggedInDriver.phone}`, JSON.stringify(routeConfig));
-    onShowNotification("Route configured successfully!");
-    onShowScreen('driverDashboard');
+    try {
+      const token = localStorage.getItem('driver_token');
+      const response = await fetch('http://localhost:5000/api/driver/route', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(routeConfig)
+      });
+
+      const result = await response.json();
+      if (response.ok) {
+        localStorage.setItem(`route_config_${loggedInDriver.phone}`, JSON.stringify(routeConfig));
+        onShowNotification("Route configuration saved into database!");
+        onShowScreen('driverDashboard');
+      } else {
+        onShowNotification(result.message || "Failed to save route configuration.");
+      }
+    } catch (error) {
+      console.error("Error saving route config:", error);
+      // Fallback
+      localStorage.setItem(`route_config_${loggedInDriver.phone}`, JSON.stringify(routeConfig));
+      onShowNotification("Saved locally. Could not reach server.");
+      onShowScreen('driverDashboard');
+    }
   };
 
   return (

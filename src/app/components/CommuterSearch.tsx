@@ -7,6 +7,7 @@ import { ArrowLeft, MapPin, Navigation, Search, Home } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useForm } from 'react-hook-form';
 import type { Screen, RouteConfig } from '../App';
+import { searchBusesApi } from '../utils/auth';
 
 interface CommuterSearchProps {
   onShowScreen: (screen: Screen) => void;
@@ -24,37 +25,46 @@ interface SearchFormData {
 export default function CommuterSearch({ onShowScreen, onGoBack, onSearchResults, onShowNotification, onGoHome }: CommuterSearchProps) {
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<SearchFormData>();
 
-  const onSubmit = (data: SearchFormData) => {
-    const start = data.startLocation.toLowerCase().trim();
-    const destination = data.destinationLocation.toLowerCase().trim();
+  const onSubmit = async (data: SearchFormData) => {
+    const start = data.startLocation.trim();
+    const destination = data.destinationLocation.trim();
 
     if (!start || !destination) {
       onShowNotification("Please enter both starting and destination locations.");
       return;
     }
 
-    if (start === destination) {
+    if (start.toLowerCase() === destination.toLowerCase()) {
       onShowNotification("Starting point and destination cannot be the same.");
       return;
     }
 
-    // Search for available buses
+    // Try MongoDB backend API search first
+    try {
+      const results = await searchBusesApi(start, destination);
+      if (results && results.length > 0) {
+        onSearchResults(results);
+        onShowScreen('busList');
+        return;
+      }
+    } catch (error) {
+      console.warn("Backend search failed, scanning local storage fallback:", error);
+    }
+
+    // Search for available buses in local storage as fallback
     const availableBuses: RouteConfig[] = [];
+    const startLower = start.toLowerCase();
+    const destLower = destination.toLowerCase();
     
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith('route_config_')) {
         const routeData = JSON.parse(localStorage.getItem(key) || '{}');
+        const stopsLower = (routeData.stops || []).map((stop: string) => stop.toLowerCase());
+        const startIndex = stopsLower.findIndex((stop: string) => stop.includes(startLower) || startLower.includes(stop));
+        const destIndex = stopsLower.findIndex((stop: string) => stop.includes(destLower) || destLower.includes(stop));
         
-        // Check if both start and destination are in the route stops
-        const hasStart = routeData.stops.some((stop: string) => 
-          stop.toLowerCase().includes(start) || start.includes(stop.toLowerCase())
-        );
-        const hasDestination = routeData.stops.some((stop: string) => 
-          stop.toLowerCase().includes(destination) || destination.includes(stop.toLowerCase())
-        );
-        
-        if (hasStart && hasDestination) {
+        if (startIndex !== -1 && destIndex !== -1 && startIndex < destIndex) {
           availableBuses.push(routeData);
         }
       }

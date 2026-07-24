@@ -83,6 +83,15 @@ export const searchBusesApi = async (start: string, destination: string): Promis
   return data;
 };
 
+export const getBusByRouteIdApi = async (routeId: string): Promise<any> => {
+  const response = await fetch(`${API_BASE_URL}/api/buses/${encodeURIComponent(routeId)}`);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || 'Failed to fetch bus details');
+  }
+  return data;
+};
+
 export const adminLoginApi = async (username: string, password: string) => {
   const response = await fetch(`${API_BASE_URL}/api/admin/login`, {
     method: 'POST',

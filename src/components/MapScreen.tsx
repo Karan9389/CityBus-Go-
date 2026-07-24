@@ -5,6 +5,7 @@ import { Badge } from './ui/badge';
 import { ArrowLeft, MapPin, Navigation, Wifi, WifiOff, RotateCcw, Clock, Home, Target } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { Screen, LocationData } from '../App';
+import { joinTrackingRoom, leaveTrackingRoom } from '../services/socketService';
 
 // Leaflet types and imports
 declare global {
@@ -33,7 +34,32 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
   const [routePath, setRoutePath] = useState<any>(null);
   const [routeMarkers, setRouteMarkers] = useState<any[]>([]);
   const [etaEnabled, setEtaEnabled] = useState(false);
-  const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [fetchedStops, setFetchedStops] = useState<string[]>([]);
+  const busMarkerRef = useRef<any>(null);
+  const updateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fetch route config from backend API
+  useEffect(() => {
+    const fetchBusDetails = async () => {
+      if (!trackingBus) return;
+      try {
+        const res = await fetch(`http://localhost:5000/api/buses/${encodeURIComponent(trackingBus)}`);
+        if (res.ok) {
+          const busData = await res.json();
+          if (busData && busData.stops) {
+            setFetchedStops(busData.stops);
+            if (busData.isLive && busData.lastLocation) {
+              setIsOnline(true);
+              setLastUpdate(new Date(busData.lastLocation.updatedAt || Date.now()));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch remote bus details:", err);
+      }
+    };
+    fetchBusDetails();
+  }, [trackingBus]);
 
   // Load Leaflet dynamically
   useEffect(() => {
@@ -87,7 +113,6 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
 
   // Get route coordinates based on bus stops
   const getRouteCoordinates = (stops: string[]) => {
-    // Mock coordinates for demo purposes - in a real app you'd geocode the stops
     const mockCoordinates: { [key: string]: [number, number] } = {
       'central station': [20.5937, 78.9629],
       'mall road': [20.5950, 78.9650],
@@ -101,14 +126,12 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
       'airport': [20.6110, 78.9820]
     };
 
-    // Generate coordinates for route stops or use mock ones
     return stops.map((stop, index) => {
       const normalizedStop = stop.toLowerCase().trim();
       if (mockCoordinates[normalizedStop]) {
         return mockCoordinates[normalizedStop];
       }
-      // Generate approximate coordinates if not found
-      return [20.5937 + (index * 0.002), 78.9629 + (index * 0.003)] as [number, number];
+      return [20.5937 + (index * 0.004), 78.9629 + (index * 0.005)] as [number, number];
     });
   };
 
@@ -116,25 +139,28 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
   const drawRoutePath = () => {
     if (!map || !trackingBus || !window.L) return;
 
-    // Clear existing route elements
     if (routePath) {
       map.removeLayer(routePath);
     }
     routeMarkers.forEach(marker => map.removeLayer(marker));
     setRouteMarkers([]);
 
-    // Get route configuration
-    const routeConfigKey = Object.keys(localStorage).find(key => 
-      key.startsWith('route_config_') && 
-      localStorage.getItem(key) && 
-      JSON.parse(localStorage.getItem(key) || '{}').routeId === trackingBus
-    );
+    let stopsToUse = fetchedStops;
+    if (!stopsToUse || stopsToUse.length === 0) {
+      const routeConfigKey = Object.keys(localStorage).find(key => 
+        key.startsWith('route_config_') && 
+        localStorage.getItem(key) && 
+        JSON.parse(localStorage.getItem(key) || '{}').routeId === trackingBus
+      );
+      if (routeConfigKey) {
+        const routeConfig = JSON.parse(localStorage.getItem(routeConfigKey) || '{}');
+        stopsToUse = routeConfig.stops || [];
+      }
+    }
 
-    if (routeConfigKey) {
-      const routeConfig = JSON.parse(localStorage.getItem(routeConfigKey) || '{}');
-      const coordinates = getRouteCoordinates(routeConfig.stops);
+    if (stopsToUse.length > 0) {
+      const coordinates = getRouteCoordinates(stopsToUse);
       
-      // Draw new route path
       const newRoutePath = window.L.polyline(coordinates, {
         color: '#4f46e5',
         weight: 4,
@@ -142,12 +168,11 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
         dashArray: '10, 5'
       }).addTo(map);
 
-      // Add stop markers
       const newRouteMarkers: any[] = [];
       coordinates.forEach((coord, index) => {
         const stopIcon = window.L.divIcon({
           html: `
-            <div class="flex items-center justify-center w-7 h-7 bg-blue-500 text-white rounded-full border-2 border-white shadow-lg text-xs font-bold">
+            <div class="flex items-center justify-center w-7 h-7 bg-indigo-600 text-white rounded-full border-2 border-white shadow-lg text-xs font-bold">
               ${index + 1}
             </div>
           `,
@@ -158,7 +183,7 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
 
         const marker = window.L.marker(coord, { icon: stopIcon })
           .addTo(map)
-          .bindPopup(`Stop ${index + 1}: ${routeConfig.stops[index]}`);
+          .bindPopup(`Stop ${index + 1}: ${stopsToUse[index]}`);
         
         newRouteMarkers.push(marker);
       });
@@ -166,80 +191,81 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
       setRoutePath(newRoutePath);
       setRouteMarkers(newRouteMarkers);
       
-      // Fit map to show entire route if no bus location
       if (!isOnline) {
         map.fitBounds(newRoutePath.getBounds().pad(0.1));
       }
     }
   };
 
-  // Update bus location
+  // Move marker smoothly or place it
+  const handleLocationUpdate = (lat: number, lng: number, timestamp?: number) => {
+    if (!map || !window.L) return;
+
+    setIsOnline(true);
+    setLastUpdate(new Date(timestamp || Date.now()));
+
+    let currentMarker = busMarkerRef.current || busMarker;
+
+    if (!currentMarker) {
+      const busIcon = window.L.divIcon({
+        html: `
+          <div class="flex items-center justify-center w-10 h-10 bg-indigo-600 text-white rounded-full shadow-xl border-2 border-white animate-pulse">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.9 22H5.1C3.94 22 3 21.06 3 19.9V6.1C3 4.94 3.94 4 5.1 4h13.8C20.06 4 21 4.94 21 6.1v13.8c0 1.16-.94 2.1-2.1 2.1zM12 2c-4.42 0-8 .5-8 4v10c0 1.1.9 2 2 2h1c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1H6V9h12v2h-1c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h1c1.1 0 2-.9 2-2V6c0-3.5-3.58-4-8-4zM7.5 17.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5S8.33 17.5 7.5 17.5zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+            </svg>
+          </div>
+        `,
+        className: 'bus-marker',
+        iconSize: [40, 40],
+        iconAnchor: [20, 40],
+      });
+
+      const marker = window.L.marker([lat, lng], { icon: busIcon }).addTo(map);
+      marker.bindPopup(`Bus #${trackingBus} - Live Location`);
+      setBusMarker(marker);
+      busMarkerRef.current = marker;
+      map.setView([lat, lng], 15);
+    } else {
+      currentMarker.setLatLng([lat, lng]);
+    }
+  };
+
   const updateBusLocation = () => {
     if (!map || !trackingBus) return;
 
     const locationData = localStorage.getItem(`bus_location_${trackingBus}`);
-    
     if (locationData) {
       const location: LocationData = JSON.parse(locationData);
       const { lat, lng, timestamp } = location;
-      
-      // Check if location is recent (within 5 minutes)
       const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-      const isRecent = timestamp > fiveMinutesAgo;
-      
-      setIsOnline(isRecent);
-      setLastUpdate(new Date(timestamp));
-
-      // Create or update marker
-      if (!busMarker && window.L) {
-        // Custom bus icon
-        const busIcon = window.L.divIcon({
-          html: `
-            <div class="flex items-center justify-center w-10 h-10 bg-indigo-600 text-white rounded-full shadow-lg border-2 border-white animate-pulse">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.9 22H5.1C3.94 22 3 21.06 3 19.9V6.1C3 4.94 3.94 4 5.1 4h13.8C20.06 4 21 4.94 21 6.1v13.8c0 1.16-.94 2.1-2.1 2.1zM12 2c-4.42 0-8 .5-8 4v10c0 1.1.9 2 2 2h1c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1H6V9h12v2h-1c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h1c1.1 0 2-.9 2-2V6c0-3.5-3.58-4-8-4zM7.5 17.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5S8.33 17.5 7.5 17.5zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
-              </svg>
-            </div>
-          `,
-          className: 'bus-marker',
-          iconSize: [40, 40],
-          iconAnchor: [20, 40],
-        });
-
-        const marker = window.L.marker([lat, lng], { icon: busIcon }).addTo(map);
-        marker.bindPopup(`Bus #${trackingBus} - Live Location`);
-        setBusMarker(marker);
-      } else if (busMarker) {
-        busMarker.setLatLng([lat, lng]);
-      }
-
-      // Center on bus if it's online, but keep route visible
-      if (routePath && busMarker) {
-        const group = window.L.featureGroup([busMarker, routePath]);
-        map.fitBounds(group.getBounds().pad(0.1));
+      if (timestamp > fiveMinutesAgo) {
+        handleLocationUpdate(lat, lng, timestamp);
       } else {
-        map.setView([lat, lng], 16);
+        setIsOnline(false);
       }
-    } else {
-      setIsOnline(false);
-      setLastUpdate(null);
     }
   };
 
-  // Start location updates and draw route
+  // Start real-time Socket.io tracking room join & route render
   useEffect(() => {
     if (map && trackingBus) {
-      drawRoutePath(); // Draw route first
-      updateBusLocation(); // Then update bus location
-      updateIntervalRef.current = setInterval(updateBusLocation, 5000);
+      drawRoutePath();
+      updateBusLocation();
+
+      // Join socket tracking room for live broadcasts!
+      joinTrackingRoom(trackingBus, (data) => {
+        if (data && data.lat !== undefined && data.lng !== undefined) {
+          handleLocationUpdate(data.lat, data.lng, data.timestamp);
+        }
+      });
     }
 
     return () => {
-      if (updateIntervalRef.current) {
-        clearInterval(updateIntervalRef.current);
+      if (trackingBus) {
+        leaveTrackingRoom(trackingBus);
       }
     };
-  }, [map, trackingBus]);
+  }, [map, trackingBus, fetchedStops]);
 
   const calculateETA = (busLat: number, busLng: number, userLat: number, userLng: number): string => {
     // Calculate distance using Haversine formula

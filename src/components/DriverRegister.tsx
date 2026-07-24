@@ -47,67 +47,121 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
 
   const validateRouteData = () => {
     if (!routeData.routeId.trim()) {
-      onShowNotification('Bus number is required.');
+      onShowNotification('Bus number / Route ID is required.');
       return false;
     }
 
     if (!routeData.startTime || !routeData.endTime) {
-      onShowNotification('Please enter a valid start and end time.');
+      onShowNotification('Please enter valid start and end times.');
+      return false;
+    }
+
+    const nonExitentStops = routeData.stops.filter(s => s.trim().length > 0);
+    if (nonExitentStops.length < 2) {
+      onShowNotification('Please enter at least 2 stops (Origin and Destination).');
       return false;
     }
 
     if (routeData.stops.some((stop) => !stop.trim())) {
-      onShowNotification('Please fill in all route stops or remove empty entries.');
+      onShowNotification('Please fill in all route stop names or remove empty entries.');
       return false;
     }
 
     return true;
   };
 
-const onSubmit = async (data: any) => {
-  // 1. If we are on Step 1, just move to Step 2 and stop here!
-  if (step === 1) {
-    setStep(2);
-    return;
-  }
-
-  // 2. If we are on Step 2, ACTUALLY register the driver
-  try {
-    const response = await fetch('http://localhost:5000/api/auth/register', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: data.name,
-        phone: data.phone,
-        password: data.password,
-      }),
-    });
-
-    const result = await response.json();
-
-    if (response.ok) {
-      // Temporarily save the route config to localStorage so your frontend map still works
-      // (We will move this into a real database table in the next phase!)
-      localStorage.setItem(`route_config_${data.phone}`, JSON.stringify(routeData));
-      
-      onShowNotification("Registration successful! Please login.");
-      onShowScreen('driverLogin');
-    } else {
-      onShowNotification(result.message || "Registration failed.");
+  const onSubmit = async (data: any) => {
+    if (step === 1) {
+      setStep(2);
+      return;
     }
-  } catch (error) {
-    console.error("Registration error:", error);
-    onShowNotification("Cannot connect to the server. Is it running?");
-  }
-};
+
+    if (!validateRouteData()) {
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: data.name,
+          phone: data.phone,
+          password: data.password,
+          routeId: routeData.routeId,
+          startTime: routeData.startTime,
+          endTime: routeData.endTime,
+          stops: routeData.stops.map(s => s.trim()).filter(Boolean)
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        if (result.token) {
+          localStorage.setItem('driver_token', result.token);
+        }
+        localStorage.setItem(`route_config_${data.phone}`, JSON.stringify({
+          routeId: routeData.routeId,
+          startTime: routeData.startTime,
+          endTime: routeData.endTime,
+          stops: routeData.stops.map(s => s.trim()).filter(Boolean)
+        }));
+        
+        onShowNotification("Registration & Route Configuration stored in database successfully!");
+        if (result.driver) {
+          onDriverLogin({
+            id: result.driver.id,
+            name: result.driver.name,
+            phone: result.driver.phone,
+            password: ''
+          });
+          onShowScreen('driverDashboard');
+        } else {
+          onShowScreen('driverLogin');
+        }
+      } else {
+        onShowNotification(result.message || "Registration failed.");
+      }
+    } catch (error) {
+      console.error("Registration error:", error);
+      onShowNotification("Cannot connect to the server. Is it running?");
+    }
+  };
 
   const addStop = () => {
     setRouteData((prev: RouteData) => ({
       ...prev,
       stops: [...prev.stops, '']
     }));
+  };
+
+  const addPresetStop = (stopName: string) => {
+    setRouteData((prev: RouteData) => {
+      // replace last stop if empty or append
+      const stopsCopy = [...prev.stops];
+      if (stopsCopy.length > 0 && stopsCopy[stopsCopy.length - 1].trim() === '') {
+        stopsCopy[stopsCopy.length - 1] = stopName;
+      } else {
+        stopsCopy.push(stopName);
+      }
+      return { ...prev, stops: stopsCopy };
+    });
+  };
+
+  const moveStop = (index: number, direction: 'up' | 'down') => {
+    setRouteData((prev: RouteData) => {
+      const newStops = [...prev.stops];
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex >= 0 && targetIndex < newStops.length) {
+        const temp = newStops[index];
+        newStops[index] = newStops[targetIndex];
+        newStops[targetIndex] = temp;
+      }
+      return { ...prev, stops: newStops };
+    });
   };
 
   const removeStop = (index: number) => {

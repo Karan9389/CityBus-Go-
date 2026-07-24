@@ -16,8 +16,9 @@ interface BusListProps {
 
 export default function BusList({ searchResults, onShowScreen, onGoBack, onTrackBus, onGoHome }: BusListProps) {
   
-  const checkBusOnline = (routeId: string) => {
-    const locationData = localStorage.getItem(`bus_location_${routeId}`);
+  const checkBusOnline = (bus: any) => {
+    if (bus.isLive) return true;
+    const locationData = localStorage.getItem(`bus_location_${bus.routeId}`);
     if (!locationData) return false;
     
     const { timestamp } = JSON.parse(locationData);
@@ -62,8 +63,8 @@ export default function BusList({ searchResults, onShowScreen, onGoBack, onTrack
         transition={{ duration: 0.5 }}
       >
         {searchResults.length > 0 ? (
-          searchResults.map((bus, index) => {
-            const isOnline = checkBusOnline(bus.routeId);
+          searchResults.map((bus: any, index) => {
+            const isOnline = checkBusOnline(bus);
             
             return (
               <motion.div
@@ -98,6 +99,11 @@ export default function BusList({ searchResults, onShowScreen, onGoBack, onTrack
                                 Offline
                               </Badge>
                             )}
+                            {bus.driver && (
+                              <span className="text-xs text-gray-500">
+                                👤 {bus.driver.name}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -108,10 +114,17 @@ export default function BusList({ searchResults, onShowScreen, onGoBack, onTrack
                       </Button>
                     </div>
 
-                    {/* Schedule */}
-                    <div className="flex items-center gap-2 mb-3 text-sm text-muted-foreground">
-                      <Clock size={14} />
-                      <span>{bus.startTime} - {bus.endTime}</span>
+                    {/* Schedule & Driver Details */}
+                    <div className="flex items-center justify-between mb-3 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <Clock size={14} />
+                        <span>{bus.startTime} - {bus.endTime}</span>
+                      </div>
+                      {bus.driver?.phone && (
+                        <span className="text-xs font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600">
+                          📞 {bus.driver.phone}
+                        </span>
+                      )}
                     </div>
 
                     {/* Route Preview */}

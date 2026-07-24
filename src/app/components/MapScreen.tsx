@@ -5,6 +5,8 @@ import { Badge } from './ui/badge';
 import { ArrowLeft, MapPin, Navigation, Wifi, WifiOff, RotateCcw, Clock, Home, Target } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { Screen, LocationData } from '../App';
+import { getBusByRouteIdApi } from '../utils/auth';
+import { joinTrackingRoom, leaveTrackingRoom } from '../../services/socketService';
 
 // Leaflet types and imports
 declare global {
@@ -33,7 +35,28 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
   const [routePath, setRoutePath] = useState<any>(null);
   const [routeMarkers, setRouteMarkers] = useState<any[]>([]);
   const [etaEnabled, setEtaEnabled] = useState(false);
-  const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [fetchedStops, setFetchedStops] = useState<string[]>([]);
+  const updateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fetch route config from MongoDB API
+  useEffect(() => {
+    const fetchBusDetails = async () => {
+      if (!trackingBus) return;
+      try {
+        const busData = await getBusByRouteIdApi(trackingBus);
+        if (busData && busData.stops) {
+          setFetchedStops(busData.stops);
+          if (busData.isLive && busData.lastLocation) {
+            setIsOnline(true);
+            setLastUpdate(new Date(busData.lastLocation.updatedAt || Date.now()));
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch remote bus details from MongoDB:", err);
+      }
+    };
+    fetchBusDetails();
+  }, [trackingBus]);
 
   // Load Leaflet dynamically
   useEffect(() => {
@@ -123,16 +146,22 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
     routeMarkers.forEach(marker => map.removeLayer(marker));
     setRouteMarkers([]);
 
-    // Get route configuration
-    const routeConfigKey = Object.keys(localStorage).find(key => 
-      key.startsWith('route_config_') && 
-      localStorage.getItem(key) && 
-      JSON.parse(localStorage.getItem(key) || '{}').routeId === trackingBus
-    );
+    let stopsToUse = fetchedStops;
+    if (!stopsToUse || stopsToUse.length === 0) {
+      const routeConfigKey = Object.keys(localStorage).find(key => 
+        key.startsWith('route_config_') && 
+        localStorage.getItem(key) && 
+        JSON.parse(localStorage.getItem(key) || '{}').routeId === trackingBus
+      );
 
-    if (routeConfigKey) {
-      const routeConfig = JSON.parse(localStorage.getItem(routeConfigKey) || '{}');
-      const coordinates = getRouteCoordinates(routeConfig.stops);
+      if (routeConfigKey) {
+        const routeConfig = JSON.parse(localStorage.getItem(routeConfigKey) || '{}');
+        stopsToUse = routeConfig.stops || [];
+      }
+    }
+
+    if (stopsToUse && stopsToUse.length > 0) {
+      const coordinates = getRouteCoordinates(stopsToUse);
       
       // Draw new route path
       const newRoutePath = window.L.polyline(coordinates, {
@@ -158,7 +187,7 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
 
         const marker = window.L.marker(coord, { icon: stopIcon })
           .addTo(map)
-          .bindPopup(`Stop ${index + 1}: ${routeConfig.stops[index]}`);
+          .bindPopup(`Stop ${index + 1}: ${stopsToUse[index]}`);
         
         newRouteMarkers.push(marker);
       });
@@ -231,6 +260,34 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
     if (map && trackingBus) {
       drawRoutePath(); // Draw route first
       updateBusLocation(); // Then update bus location
+
+      // Subscribe to real-time driver updates over socket
+      joinTrackingRoom(trackingBus, (data) => {
+        if (data && data.lat !== undefined && data.lng !== undefined) {
+          setIsOnline(true);
+          setLastUpdate(new Date(data.timestamp || Date.now()));
+          if (!busMarker && window.L) {
+            const busIcon = window.L.divIcon({
+              html: `
+                <div class="flex items-center justify-center w-10 h-10 bg-indigo-600 text-white rounded-full shadow-lg border-2 border-white animate-pulse">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.9 22H5.1C3.94 22 3 21.06 3 19.9V6.1C3 4.94 3.94 4 5.1 4h13.8C20.06 4 21 4.94 21 6.1v13.8c0 1.16-.94 2.1-2.1 2.1zM12 2c-4.42 0-8 .5-8 4v10c0 1.1.9 2 2 2h1c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1H6V9h12v2h-1c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h1c1.1 0 2-.9 2-2V6c0-3.5-3.58-4-8-4zM7.5 17.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5S8.33 17.5 7.5 17.5zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+                  </svg>
+                </div>
+              `,
+              className: 'bus-marker',
+              iconSize: [40, 40],
+              iconAnchor: [20, 40],
+            });
+            const marker = window.L.marker([data.lat, data.lng], { icon: busIcon }).addTo(map);
+            marker.bindPopup(`Bus #${trackingBus} - Live Location`);
+            setBusMarker(marker);
+          } else if (busMarker) {
+            busMarker.setLatLng([data.lat, data.lng]);
+          }
+        }
+      });
+
       updateIntervalRef.current = setInterval(updateBusLocation, 5000);
     }
 
@@ -238,8 +295,11 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
       if (updateIntervalRef.current) {
         clearInterval(updateIntervalRef.current);
       }
+      if (trackingBus) {
+        leaveTrackingRoom(trackingBus);
+      }
     };
-  }, [map, trackingBus]);
+  }, [map, trackingBus, fetchedStops]);
 
   const calculateETA = (busLat: number, busLng: number, userLat: number, userLng: number): string => {
     // Calculate distance using Haversine formula
