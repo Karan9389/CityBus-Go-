@@ -15,6 +15,7 @@ interface DriverConfigProps {
   onShowScreen: (screen: Screen) => void;
   onGoBack: () => void;
   onShowNotification: (message: string) => void;
+  onGoHome?: () => void;
 }
 
 interface ConfigFormData {

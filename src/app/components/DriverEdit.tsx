@@ -13,6 +13,7 @@ interface DriverEditProps {
   onGoBack: () => void;
   onDriverUpdate: (driver: Driver) => void;
   onShowNotification: (message: string) => void;
+  onGoHome?: () => void;
 }
 
 interface EditFormData {
@@ -73,6 +74,7 @@ export default function DriverEdit({ loggedInDriver, onGoBack, onDriverUpdate, o
 
     // Update driver data
     const updatedDriver: Driver = {
+      id: loggedInDriver.id,
       name: data.name,
       phone: data.phone,
       password: data.newPassword || loggedInDriver.password

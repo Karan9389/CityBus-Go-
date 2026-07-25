@@ -13,6 +13,7 @@ interface DriverDashboardProps {
   loggedInDriver: Driver | null;
   onShowScreen: (screen: Screen) => void;
   onLogout: () => void;
+  onGoHome?: () => void;
 }
 
 export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout }: DriverDashboardProps) {
