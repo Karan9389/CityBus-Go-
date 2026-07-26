@@ -33,7 +33,7 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
   const [routePath, setRoutePath] = useState<any>(null);
   const [routeMarkers, setRouteMarkers] = useState<any[]>([]);
   const [etaEnabled, setEtaEnabled] = useState(false);
-  const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const updateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load Leaflet dynamically
   useEffect(() => {

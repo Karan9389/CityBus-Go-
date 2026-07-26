@@ -24,7 +24,7 @@ export default function MapScreen({ trackingBus, onShowScreen }: MapScreenProps)
   const [busMarker, setBusMarker] = useState<any>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isOnline, setIsOnline] = useState(false);
-  const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const updateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load Leaflet dynamically
   useEffect(() => {
