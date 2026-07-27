@@ -5,8 +5,9 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ArrowLeft, User, Phone, Lock, UserPlus, Bus, MapPin, Clock, Home, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useForm } from 'react-hook-form@7.55.0';
+import { useForm } from 'react-hook-form';
 import type { Screen, Driver } from '../App';
+import { api } from '../services/api';
 
 interface DriverRegisterProps {
   onShowScreen: (screen: Screen) => void;
@@ -37,53 +38,38 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
   
   const password = watch('password');
 
-  const onSubmit = (data: RegisterFormData) => {
+  const onSubmit = async (data: RegisterFormData) => {
     if (step === 1) {
-      // Move to step 2
       setStep(2);
       return;
     }
 
-    // Validate route data
-    if (!routeData.routeId.trim() || !routeData.startTime || !routeData.endTime || routeData.stops.every(stop => !stop.trim())) {
+    const validStops = routeData.stops.map(s => s.trim()).filter(Boolean);
+    if (!routeData.routeId.trim() || !routeData.startTime || !routeData.endTime || validStops.length === 0) {
       onShowNotification('❌ Please complete all route details');
       return;
     }
 
-    // Check if driver already exists
-    const existingDriver = localStorage.getItem(`driver_${data.phone}`);
-    const storedDrivers = localStorage.getItem('registered_drivers');
-    const allDrivers = storedDrivers ? JSON.parse(storedDrivers) : [];
-    
-    if (existingDriver || allDrivers.some((driver: Driver) => driver.phone === data.phone)) {
-      onShowNotification('❌ A driver with this phone number already exists.');
-      return;
-    }
+    try {
+      const response = await api.driverRegister({
+        name: data.name.trim(),
+        phone: data.phone.trim(),
+        password: data.password,
+        routeId: routeData.routeId.trim(),
+        startTime: routeData.startTime,
+        endTime: routeData.endTime,
+        stops: validStops,
+      });
 
-    // Save driver data
-    const driverData = {
-      id: `driver_${Date.now()}`,
-      name: data.name,
-      phone: data.phone,
-      password: data.password
-    };
-    
-    // Save route configuration
-    const validStops = routeData.stops.filter(stop => stop.trim());
-    const routeConfig = {
-      routeId: routeData.routeId.trim(),
-      startTime: routeData.startTime,
-      endTime: routeData.endTime,
-      stops: validStops
-    };
-    
-    localStorage.setItem(`driver_${data.phone}`, JSON.stringify(driverData));
-    localStorage.setItem(`route_config_${data.phone}`, JSON.stringify(routeConfig));
-    
-    // Auto-login and redirect to dashboard
-    onDriverLogin(driverData);
-    onShowNotification(`🎉 Welcome aboard, ${data.name}! Your account has been created successfully.`);
-    onShowScreen('driverDashboard');
+      if (response.driver) {
+        onDriverLogin(response.driver);
+        onShowNotification(`🎉 Welcome aboard, ${response.driver.name}! Account created successfully.`);
+        onShowScreen('driverDashboard');
+      }
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      onShowNotification(error.message || 'Registration failed. Please try again.');
+    }
   };
 
   const addStop = () => {
@@ -127,7 +113,7 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
           >
             <ArrowLeft size={20} />
           </Button>
-          <h2 className="ml-4">Driver Registration</h2>
+          <h2 className="ml-4 font-bold text-lg">Driver Registration</h2>
         </div>
         <Button 
           variant="ghost" 
@@ -141,7 +127,6 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto px-6">
-        {/* Registration Form */}
         <motion.div 
           className="flex flex-col justify-center min-h-full py-4"
           initial={{ opacity: 0, y: 20 }}
@@ -231,8 +216,8 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
                         {...register('password', { 
                           required: 'Password is required',
                           minLength: {
-                            value: 6,
-                            message: 'Password must be at least 6 characters'
+                            value: 4,
+                            message: 'Password must be at least 4 characters'
                           }
                         })}
                       />
@@ -284,7 +269,7 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
 
                   <Button 
                     type="submit"
-                    className="w-full h-12 bg-green-600 hover:bg-green-700"
+                    className="w-full h-12 bg-green-600 hover:bg-green-700 text-white"
                   >
                     Continue to Route Setup
                   </Button>
@@ -378,14 +363,11 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
                         </div>
                       ))}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Add all stops on your route. Include popular landmarks and areas for better search results.
-                    </p>
                   </div>
 
                   <Button 
                     type="submit" 
-                    className="w-full h-12 bg-green-600 hover:bg-green-700"
+                    className="w-full h-12 bg-green-600 hover:bg-green-700 text-white"
                     disabled={isSubmitting}
                   >
                     {isSubmitting ? 'Creating Account...' : 'Complete Registration'}

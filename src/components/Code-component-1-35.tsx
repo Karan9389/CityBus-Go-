@@ -6,7 +6,7 @@ import { Label } from './ui/label';
 import { Badge } from './ui/badge';
 import { Bus, Clock, MapPin, Plus, X, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useForm } from 'react-hook-form@7.55.0';
+import { useForm } from 'react-hook-form';
 import type { Screen, Driver } from '../App';
 
 interface DriverConfigProps {

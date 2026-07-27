@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from './ui/button';
-import { Card, CardContent } from './ui/card';
+import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import { ArrowLeft, MapPin, Navigation, Wifi, WifiOff, RotateCcw, Clock, Home, Target } from 'lucide-react';
 import { motion } from 'motion/react';
-import type { Screen, LocationData } from '../App';
+import type { Screen } from '../App';
+import { api } from '../services/api';
+import { socketService } from '../services/socket';
 
-// Leaflet types and imports
 declare global {
   interface Window {
     L: any;
@@ -30,22 +31,21 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
   const [eta, setEta] = useState<string | null>(null);
   const [showingEta, setShowingEta] = useState(false);
   const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [busLocation, setBusLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [routeConfig, setRouteConfig] = useState<any>(null);
   const [routePath, setRoutePath] = useState<any>(null);
   const [routeMarkers, setRouteMarkers] = useState<any[]>([]);
   const [etaEnabled, setEtaEnabled] = useState(false);
-  const updateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load Leaflet dynamically
   useEffect(() => {
     const loadLeaflet = async () => {
       if (typeof window !== 'undefined' && !window.L) {
-        // Load CSS
         const link = document.createElement('link');
         link.rel = 'stylesheet';
         link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
         document.head.appendChild(link);
 
-        // Load JS
         const script = document.createElement('script');
         script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
         
@@ -58,18 +58,15 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
 
     loadLeaflet().then(() => {
       if (mapRef.current && window.L && !map) {
-        // Initialize map
         const newMap = window.L.map(mapRef.current, {
           zoomControl: false
-        }).setView([20.5937, 78.9629], 5);
+        }).setView([20.5937, 78.9629], 6);
 
-        // Add tile layer
         window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19,
           attribution: '© OpenStreetMap contributors'
         }).addTo(newMap);
 
-        // Add zoom control to bottom right
         window.L.control.zoom({
           position: 'bottomright'
         }).addTo(newMap);
@@ -77,64 +74,70 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
         setMap(newMap);
       }
     });
-
-    return () => {
-      if (updateIntervalRef.current) {
-        clearInterval(updateIntervalRef.current);
-      }
-    };
   }, [map]);
 
-  // Get route coordinates based on bus stops
-  const getRouteCoordinates = (stops: string[]) => {
-    // Mock coordinates for demo purposes - in a real app you'd geocode the stops
-    const mockCoordinates: { [key: string]: [number, number] } = {
-      'central station': [20.5937, 78.9629],
-      'mall road': [20.5950, 78.9650],
-      'university gate': [20.5970, 78.9680],
-      'city hospital': [20.5990, 78.9700],
-      'bus stand': [20.6010, 78.9720],
-      'market square': [20.6030, 78.9740],
-      'railway crossing': [20.6050, 78.9760],
-      'old city': [20.6070, 78.9780],
-      'new town': [20.6090, 78.9800],
-      'airport': [20.6110, 78.9820]
-    };
+  // Fetch route config & join socket room
+  useEffect(() => {
+    if (!trackingBus) return;
 
-    // Generate coordinates for route stops or use mock ones
-    return stops.map((stop, index) => {
-      const normalizedStop = stop.toLowerCase().trim();
-      if (mockCoordinates[normalizedStop]) {
-        return mockCoordinates[normalizedStop];
+    async function fetchBusDetails() {
+      try {
+        const details = await api.getBusByRouteId(trackingBus);
+        if (details) {
+          setRouteConfig(details);
+          setIsOnline(!!details.isLive);
+          if (details.lastLocation && details.lastLocation.lat !== undefined) {
+            setBusLocation({ lat: details.lastLocation.lat, lng: details.lastLocation.lng });
+            setLastUpdate(new Date(details.lastLocation.updatedAt || Date.now()));
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching bus details:', err);
       }
-      // Generate approximate coordinates if not found
-      return [20.5937 + (index * 0.002), 78.9629 + (index * 0.003)] as [number, number];
+    }
+
+    fetchBusDetails();
+
+    // Join tracking room via socket
+    socketService.joinCommuterTracking(trackingBus);
+
+    const unsubscribeLocation = socketService.onBusLocationChange((data) => {
+      if (data.routeId === trackingBus) {
+        setBusLocation({ lat: data.lat, lng: data.lng });
+        setIsOnline(data.isLive !== false);
+        setLastUpdate(new Date(data.timestamp || Date.now()));
+      }
     });
-  };
 
-  // Draw route path on map
-  const drawRoutePath = () => {
-    if (!map || !trackingBus || !window.L) return;
+    const unsubscribeStatus = socketService.onBusStatusChange((data) => {
+      if (data.routeId === trackingBus) {
+        setIsOnline(data.isLive);
+      }
+    });
 
-    // Clear existing route elements
+    return () => {
+      socketService.leaveCommuterTracking(trackingBus);
+      unsubscribeLocation();
+      unsubscribeStatus();
+    };
+  }, [trackingBus]);
+
+  // Draw route path when routeConfig is loaded
+  useEffect(() => {
+    if (!map || !window.L || !routeConfig || !Array.isArray(routeConfig.stops)) return;
+
     if (routePath) {
       map.removeLayer(routePath);
     }
-    routeMarkers.forEach(marker => map.removeLayer(marker));
+    routeMarkers.forEach(m => map.removeLayer(m));
     setRouteMarkers([]);
 
-    // Get route configuration
-    const routeConfigKey = Object.keys(localStorage).find(key => 
-      key.startsWith('route_config_') && 
-      localStorage.getItem(key) && 
-      JSON.parse(localStorage.getItem(key) || '{}').routeId === trackingBus
-    );
+    // Generate mock/approximate coordinates for stops for display
+    const coordinates: [number, number][] = routeConfig.stops.map((_, index) => {
+      return [20.5937 + index * 0.015, 78.9629 + index * 0.02];
+    });
 
-    if (routeConfigKey) {
-      const routeConfig = JSON.parse(localStorage.getItem(routeConfigKey) || '{}');
-      const coordinates = getRouteCoordinates(routeConfig.stops);
-      
-      // Draw new route path
+    if (coordinates.length > 0) {
       const newRoutePath = window.L.polyline(coordinates, {
         color: '#4f46e5',
         weight: 4,
@@ -142,12 +145,11 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
         dashArray: '10, 5'
       }).addTo(map);
 
-      // Add stop markers
-      const newRouteMarkers: any[] = [];
+      const newMarkers: any[] = [];
       coordinates.forEach((coord, index) => {
         const stopIcon = window.L.divIcon({
           html: `
-            <div class="flex items-center justify-center w-7 h-7 bg-blue-500 text-white rounded-full border-2 border-white shadow-lg text-xs font-bold">
+            <div class="flex items-center justify-center w-7 h-7 bg-blue-600 text-white rounded-full border-2 border-white shadow-lg text-xs font-bold">
               ${index + 1}
             </div>
           `,
@@ -159,113 +161,47 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
         const marker = window.L.marker(coord, { icon: stopIcon })
           .addTo(map)
           .bindPopup(`Stop ${index + 1}: ${routeConfig.stops[index]}`);
-        
-        newRouteMarkers.push(marker);
+        newMarkers.push(marker);
       });
 
       setRoutePath(newRoutePath);
-      setRouteMarkers(newRouteMarkers);
-      
-      // Fit map to show entire route if no bus location
-      if (!isOnline) {
-        map.fitBounds(newRoutePath.getBounds().pad(0.1));
+      setRouteMarkers(newMarkers);
+
+      if (!busLocation) {
+        map.fitBounds(newRoutePath.getBounds().pad(0.2));
       }
     }
-  };
+  }, [map, routeConfig]);
 
-  // Update bus location
-  const updateBusLocation = () => {
-    if (!map || !trackingBus) return;
-
-    const locationData = localStorage.getItem(`bus_location_${trackingBus}`);
-    
-    if (locationData) {
-      const location: LocationData = JSON.parse(locationData);
-      const { lat, lng, timestamp } = location;
-      
-      // Check if location is recent (within 5 minutes)
-      const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-      const isRecent = timestamp > fiveMinutesAgo;
-      
-      setIsOnline(isRecent);
-      setLastUpdate(new Date(timestamp));
-
-      // Create or update marker
-      if (!busMarker && window.L) {
-        // Custom bus icon
-        const busIcon = window.L.divIcon({
-          html: `
-            <div class="flex items-center justify-center w-10 h-10 bg-indigo-600 text-white rounded-full shadow-lg border-2 border-white animate-pulse">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.9 22H5.1C3.94 22 3 21.06 3 19.9V6.1C3 4.94 3.94 4 5.1 4h13.8C20.06 4 21 4.94 21 6.1v13.8c0 1.16-.94 2.1-2.1 2.1zM12 2c-4.42 0-8 .5-8 4v10c0 1.1.9 2 2 2h1c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1H6V9h12v2h-1c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h1c1.1 0 2-.9 2-2V6c0-3.5-3.58-4-8-4zM7.5 17.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5S8.33 17.5 7.5 17.5zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
-              </svg>
-            </div>
-          `,
-          className: 'bus-marker',
-          iconSize: [40, 40],
-          iconAnchor: [20, 40],
-        });
-
-        const marker = window.L.marker([lat, lng], { icon: busIcon }).addTo(map);
-        marker.bindPopup(`Bus #${trackingBus} - Live Location`);
-        setBusMarker(marker);
-      } else if (busMarker) {
-        busMarker.setLatLng([lat, lng]);
-      }
-
-      // Center on bus if it's online, but keep route visible
-      if (routePath && busMarker) {
-        const group = window.L.featureGroup([busMarker, routePath]);
-        map.fitBounds(group.getBounds().pad(0.1));
-      } else {
-        map.setView([lat, lng], 16);
-      }
-    } else {
-      setIsOnline(false);
-      setLastUpdate(null);
-    }
-  };
-
-  // Start location updates and draw route
+  // Update bus marker when location updates
   useEffect(() => {
-    if (map && trackingBus) {
-      drawRoutePath(); // Draw route first
-      updateBusLocation(); // Then update bus location
-      updateIntervalRef.current = setInterval(updateBusLocation, 5000);
-    }
+    if (!map || !window.L || !busLocation) return;
 
-    return () => {
-      if (updateIntervalRef.current) {
-        clearInterval(updateIntervalRef.current);
-      }
-    };
-  }, [map, trackingBus]);
+    const { lat, lng } = busLocation;
 
-  const calculateETA = (busLat: number, busLng: number, userLat: number, userLng: number): string => {
-    // Calculate distance using Haversine formula
-    const R = 6371; // Earth's radius in kilometers
-    const dLat = (userLat - busLat) * Math.PI / 180;
-    const dLon = (userLng - busLng) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(busLat * Math.PI / 180) * Math.cos(userLat * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    const distance = R * c; // Distance in km
+    if (!busMarker) {
+      const busIcon = window.L.divIcon({
+        html: `
+          <div class="flex items-center justify-center w-10 h-10 bg-indigo-600 text-white rounded-full shadow-lg border-2 border-white animate-pulse">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.9 22H5.1C3.94 22 3 21.06 3 19.9V6.1C3 4.94 3.94 4 5.1 4h13.8C20.06 4 21 4.94 21 6.1v13.8c0 1.16-.94 2.1-2.1 2.1zM12 2c-4.42 0-8 .5-8 4v10c0 1.1.9 2 2 2h1c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1H6V9h12v2h-1c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h1c1.1 0 2-.9 2-2V6c0-3.5-3.58-4-8-4zM7.5 17.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5S8.33 17.5 7.5 17.5zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+            </svg>
+          </div>
+        `,
+        className: 'bus-marker',
+        iconSize: [40, 40],
+        iconAnchor: [20, 40],
+      });
 
-    // Estimate travel time (assuming average city bus speed of 25 km/h)
-    const averageSpeed = 25; // km/h
-    const timeInHours = distance / averageSpeed;
-    const timeInMinutes = Math.round(timeInHours * 60);
-
-    if (timeInMinutes < 1) {
-      return "Arriving now";
-    } else if (timeInMinutes === 1) {
-      return "1 minute";
+      const marker = window.L.marker([lat, lng], { icon: busIcon }).addTo(map);
+      marker.bindPopup(`Bus #${trackingBus} - Live Location`);
+      setBusMarker(marker);
+      map.setView([lat, lng], 15);
     } else {
-      return `${timeInMinutes} minutes`;
+      busMarker.setLatLng([lat, lng]);
+      map.panTo([lat, lng]);
     }
-  };
+  }, [map, busLocation]);
 
   const handleToggleETA = () => {
     if (!etaEnabled) {
@@ -282,69 +218,33 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
           const { latitude, longitude } = position.coords;
           setUserLocation({ lat: latitude, lng: longitude });
 
-          // Get current bus location
-          const locationData = localStorage.getItem(`bus_location_${trackingBus}`);
-          if (locationData && map && window.L) {
-            const busLocation: LocationData = JSON.parse(locationData);
-            
-            // Calculate and show ETA
-            const etaTime = calculateETA(busLocation.lat, busLocation.lng, latitude, longitude);
-            setEta(etaTime);
+          if (busLocation) {
+            // Estimate arrival time
+            const dLat = (latitude - busLocation.lat) * 111; // approx km
+            const dLng = (longitude - busLocation.lng) * 111;
+            const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+            const timeMin = Math.round((dist / 25) * 60);
 
-            // Add user marker to map
-            if (!userMarker) {
-              const userIcon = window.L.divIcon({
-                html: `
-                  <div class="flex items-center justify-center w-8 h-8 bg-green-600 text-white rounded-full shadow-lg border-2 border-white">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-                    </svg>
-                  </div>
-                `,
-                className: 'user-marker',
-                iconSize: [32, 32],
-                iconAnchor: [16, 32],
-              });
-
-              const marker = window.L.marker([latitude, longitude], { icon: userIcon }).addTo(map);
-              marker.bindPopup('Your Location');
-              setUserMarker(marker);
-            } else {
-              userMarker.setLatLng([latitude, longitude]);
-            }
-
-            // Fit map to show both markers and route
-            if (busMarker && routePath) {
-              const group = window.L.featureGroup([busMarker, userMarker, routePath]);
-              map.fitBounds(group.getBounds().pad(0.1));
-            }
+            setEta(timeMin <= 1 ? 'Arriving now' : `${timeMin} minutes`);
           }
           setShowingEta(false);
         },
         (error) => {
           console.error('Error getting user location:', error);
-          alert('Unable to get your location. Please make sure location services are enabled.');
           setShowingEta(false);
           setEtaEnabled(false);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        }
       );
     } else {
-      // Disable ETA
       setEtaEnabled(false);
       setEta(null);
-      if (userMarker) {
-        map.removeLayer(userMarker);
-        setUserMarker(null);
-      }
-      setUserLocation(null);
     }
   };
 
   return (
     <div className="h-full flex flex-col relative">
       
-      {/* Header Overlay - Fixed position with higher z-index */}
+      {/* Header Overlay */}
       <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-b from-white via-white/95 to-transparent p-4 max-w-sm mx-auto">
         <div className="flex items-center justify-between mb-2">
           <Button 
@@ -365,21 +265,13 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
             >
               <Home size={20} />
             </Button>
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={updateBusLocation}
-              className="p-2 hover:bg-gray-100 rounded-full bg-white shadow-lg border"
-            >
-              <RotateCcw size={20} />
-            </Button>
           </div>
         </div>
         
         <Card className="bg-white shadow-lg border">
           <div className="p-3">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-base">Bus #{trackingBus}</h2>
+              <h2 className="text-base font-bold">Bus #{trackingBus}</h2>
               <Badge 
                 variant={isOnline ? "default" : "secondary"} 
                 className={isOnline ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-600"}
@@ -398,53 +290,23 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
               </Badge>
             </div>
             
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
-                {isOnline ? "Live tracking active" : "Showing route only"}
-              </span>
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{isOnline ? "Receiving live location" : "Showing route details"}</span>
               {lastUpdate && (
-                <span className="text-xs text-muted-foreground">
-                  {lastUpdate.toLocaleTimeString()}
-                </span>
+                <span>Updated {lastUpdate.toLocaleTimeString()}</span>
               )}
             </div>
           </div>
         </Card>
       </div>
 
-      {/* Map Container with padding for header and footer */}
+      {/* Map Container */}
       <div className="flex-1 relative pt-32 pb-20">
         <div 
           ref={mapRef} 
           className="w-full h-full"
           style={{ minHeight: '400px' }}
         />
-
-        {/* No Location Message */}
-        {!isOnline && !lastUpdate && (
-          <motion.div 
-            className="absolute inset-0 flex items-center justify-center bg-white/70 backdrop-blur-sm"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 2 }}
-          >
-            <Card className="max-w-sm mx-4 text-center">
-              <div className="p-6">
-                <div className="bg-amber-100 rounded-full p-4 w-fit mx-auto mb-4">
-                  <MapPin className="text-amber-600" size={32} />
-                </div>
-                <h3 className="mb-2">Location Not Available</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  The driver is not currently sharing their location. Please check back later or try refreshing.
-                </p>
-                <Button size="sm" onClick={updateBusLocation}>
-                  <RotateCcw size={14} className="mr-1" />
-                  Refresh
-                </Button>
-              </div>
-            </Card>
-          </motion.div>
-        )}
       </div>
 
       {/* ETA Display */}
@@ -453,7 +315,6 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
           className="fixed top-36 left-4 right-4 z-40 max-w-sm mx-auto"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
         >
           <Card className="bg-green-100 border-green-200 shadow-lg">
             <div className="p-3 text-center">
@@ -462,17 +323,14 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
                 <h3 className="text-green-800 text-sm font-medium">ETA</h3>
               </div>
               <p className="text-green-900 font-semibold text-lg">{eta}</p>
-              <p className="text-xs text-green-700 mt-1">
-                Based on current location
-              </p>
             </div>
           </Card>
         </motion.div>
       )}
 
-      {/* ETA Toggle Button - Always Visible with proper z-index */}
-      <div className="fixed bottom-4 left-4 right-4 z-50 max-w-sm mx-auto pointer-events-none">
-        <div className="flex gap-2 pointer-events-auto">
+      {/* ETA Toggle Button */}
+      <div className="fixed bottom-4 left-4 right-4 z-50 max-w-sm mx-auto">
+        <div className="flex gap-2">
           <Button 
             onClick={handleToggleETA}
             disabled={showingEta}
@@ -481,47 +339,9 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
               : 'bg-blue-600 hover:bg-blue-700'
             } text-white shadow-lg border-2 border-white`}
           >
-            {showingEta ? (
-              <>
-                <Clock className="mr-2 animate-spin" size={18} />
-                Getting ETA...
-              </>
-            ) : etaEnabled ? (
-              <>
-                <Target className="mr-2" size={18} />
-                ETA: ON  
-              </>
-            ) : (
-              <>
-                <Target className="mr-2" size={18} />
-                Show ETA
-              </>
-            )}
+            <Target className="mr-2" size={18} />
+            {showingEta ? "Getting ETA..." : etaEnabled ? "ETA: ON" : "Calculate ETA"}
           </Button>
-          
-          {etaEnabled && (
-            <Button 
-              onClick={() => {
-                setEtaEnabled(false);
-                setEta(null);
-                if (userMarker) {
-                  map.removeLayer(userMarker);
-                  setUserMarker(null);
-                }
-              }}
-              variant="outline"
-              className="bg-white shadow-lg border-2 border-gray-300"
-            >
-              OFF
-            </Button>
-          )}
-        </div>
-        
-        <div className="text-xs text-center text-gray-600 mt-2 bg-white/90 backdrop-blur-sm rounded px-3 py-1 shadow-md border pointer-events-auto">
-          {isOnline 
-            ? "🟢 Live tracking • Route with stops shown" 
-            : "🔴 Offline • Route with stops shown"
-          }
         </div>
       </div>
     </div>

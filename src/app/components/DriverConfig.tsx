@@ -6,14 +6,16 @@ import { Label } from './ui/label';
 import { Badge } from './ui/badge';
 import { ArrowLeft, Bus, Clock, MapPin, Plus, X, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useForm } from 'react-hook-form@7.55.0';
+import { useForm } from 'react-hook-form';
 import type { Screen, Driver } from '../App';
+import { api } from '../services/api';
 
 interface DriverConfigProps {
   loggedInDriver: Driver | null;
   onShowScreen: (screen: Screen) => void;
   onGoBack: () => void;
   onShowNotification: (message: string) => void;
+  onGoHome?: () => void;
 }
 
 interface ConfigFormData {
@@ -30,8 +32,8 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
 
   const addStop = () => {
     const stopName = newStop.trim();
-    if (stopName && !stops.includes(stopName.toLowerCase())) {
-      setStops([...stops, stopName.toLowerCase()]);
+    if (stopName && !stops.map(s => s.toLowerCase()).includes(stopName.toLowerCase())) {
+      setStops([...stops, stopName]);
       setNewStop('');
     }
   };
@@ -40,24 +42,26 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
     setStops(stops.filter((_, i) => i !== index));
   };
 
-  const onSubmit = (data: ConfigFormData) => {
-    if (!loggedInDriver) return;
-    
-    if (stops.length < 2) {
-      onShowNotification("Please add at least 2 bus stops.");
+  const onSubmit = async (data: ConfigFormData) => {
+    if (stops.length < 1) {
+      onShowNotification("Please add at least 1 bus stop.");
       return;
     }
 
-    const routeConfig = {
-      routeId: data.busNumber,
-      startTime: data.startTime,
-      endTime: data.endTime,
-      stops: stops
-    };
+    try {
+      await api.saveRouteConfig({
+        routeId: data.busNumber.trim(),
+        startTime: data.startTime,
+        endTime: data.endTime,
+        stops: stops,
+      });
 
-    localStorage.setItem(`route_config_${loggedInDriver.phone}`, JSON.stringify(routeConfig));
-    onShowNotification("Route configured successfully!");
-    onShowScreen('driverDashboard');
+      onShowNotification("Route configured successfully!");
+      onShowScreen('driverDashboard');
+    } catch (error: any) {
+      console.error('Save route error:', error);
+      onShowNotification(error.message || 'Failed to save route configuration.');
+    }
   };
 
   return (
@@ -77,7 +81,7 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
           <div className="mx-auto bg-blue-100 rounded-full p-4 w-fit mb-4">
             <Bus className="text-blue-600" size={32} />
           </div>
-          <h2>Configure Your Route</h2>
+          <h2 className="font-bold text-xl">Configure Your Route</h2>
           <p className="text-muted-foreground mt-2">Set up your bus route and schedule</p>
         </div>
       </div>
@@ -94,19 +98,20 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
           {/* Bus Number */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-base">
                 <Bus size={20} />
                 Bus Information
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                <Label htmlFor="busNumber">Bus Number</Label>
+                <Label htmlFor="busNumber">Route / Bus Number</Label>
                 <Input
                   id="busNumber"
-                  placeholder="e.g., 101-A, Route 25"
+                  placeholder="e.g., B101, Route 45, etc."
+                  className="h-12"
                   {...register('busNumber', { 
-                    required: 'Bus number is required'
+                    required: 'Bus number is required' 
                   })}
                 />
                 {errors.busNumber && (
@@ -119,33 +124,36 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
           {/* Schedule */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-base">
                 <Clock size={20} />
                 Schedule
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="startTime">Start Time</Label>
                   <Input
                     id="startTime"
-                    placeholder="08:00 AM"
+                    type="time"
+                    className="h-12"
                     {...register('startTime', { 
-                      required: 'Start time is required'
+                      required: 'Start time is required' 
                     })}
                   />
                   {errors.startTime && (
                     <p className="text-sm text-destructive">{errors.startTime.message}</p>
                   )}
                 </div>
+                
                 <div className="space-y-2">
                   <Label htmlFor="endTime">End Time</Label>
                   <Input
                     id="endTime"
-                    placeholder="09:00 PM"
+                    type="time"
+                    className="h-12"
                     {...register('endTime', { 
-                      required: 'End time is required'
+                      required: 'End time is required' 
                     })}
                   />
                   {errors.endTime && (
@@ -159,85 +167,77 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
           {/* Bus Stops */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-base">
                 <MapPin size={20} />
-                Bus Stops
+                Bus Stops ({stops.length})
               </CardTitle>
-              <p className="text-sm text-muted-foreground">Add stops in the order of your route</p>
             </CardHeader>
             <CardContent className="space-y-4">
-              
-              {/* Add Stop Input */}
               <div className="flex gap-2">
                 <Input
-                  placeholder="Enter stop name"
+                  placeholder="Add a stop name (e.g., Central Station)"
                   value={newStop}
                   onChange={(e) => setNewStop(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addStop())}
-                  className="flex-1"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addStop();
+                    }
+                  }}
+                  className="h-12"
                 />
                 <Button 
                   type="button" 
                   onClick={addStop}
-                  size="sm"
-                  variant="outline"
-                  className="px-3"
+                  className="h-12 px-6 bg-blue-600 hover:bg-blue-700 text-white"
                 >
-                  <Plus size={16} />
+                  <Plus size={20} />
                 </Button>
               </div>
 
               {/* Stops List */}
-              <div className="space-y-2 max-h-40 overflow-y-auto">
+              <div className="space-y-2 max-h-48 overflow-y-auto">
                 <AnimatePresence>
                   {stops.map((stop, index) => (
                     <motion.div
-                      key={`${stop}-${index}`}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 20 }}
-                      className="flex items-center justify-between bg-muted/50 p-3 rounded-lg"
+                      key={index}
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border"
                     >
                       <div className="flex items-center gap-3">
-                        <Badge variant="secondary" className="w-8 h-8 rounded-full flex items-center justify-center">
+                        <Badge variant="outline" className="w-6 h-6 rounded-full flex items-center justify-center p-0 text-xs">
                           {index + 1}
                         </Badge>
-                        <span className="capitalize">{stop}</span>
+                        <span className="capitalize text-sm font-medium">{stop}</span>
                       </div>
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         onClick={() => removeStop(index)}
-                        className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        className="p-1 hover:bg-gray-200 rounded-full h-auto text-muted-foreground hover:text-destructive"
                       >
-                        <X size={14} />
+                        <X size={16} />
                       </Button>
                     </motion.div>
                   ))}
                 </AnimatePresence>
               </div>
-
-              {stops.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  <MapPin size={24} className="mx-auto mb-2 opacity-50" />
-                  <p>No stops added yet</p>
-                  <p className="text-sm">Add at least 2 stops to create your route</p>
-                </div>
-              )}
             </CardContent>
           </Card>
 
           {/* Submit Button */}
           <Button 
             type="submit" 
-            className="w-full h-12 bg-indigo-600 hover:bg-indigo-700"
-            disabled={isSubmitting || stops.length < 2}
+            className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-2"
+            disabled={isSubmitting}
           >
-            <Save className="mr-2" size={20} />
-            {isSubmitting ? 'Saving Configuration...' : 'Save Configuration'}
+            <Save size={20} />
+            {isSubmitting ? 'Saving Route...' : 'Save Configuration'}
           </Button>
-          
+
         </form>
       </motion.div>
     </div>

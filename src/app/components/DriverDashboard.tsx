@@ -6,58 +6,78 @@ import { Avatar, AvatarFallback } from './ui/avatar';
 import { MapPin, Navigation, Square, LogOut, User, Bus, Clock, Route, Edit } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { Screen, Driver, RouteConfig } from '../App';
+import { api } from '../services/api';
+import { socketService } from '../services/socket';
 
 interface DriverDashboardProps {
   loggedInDriver: Driver | null;
   onShowScreen: (screen: Screen) => void;
   onLogout: () => void;
+  onGoHome?: () => void;
 }
 
 export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout }: DriverDashboardProps) {
   const [isSharing, setIsSharing] = useState(false);
   const [locationWatcherId, setLocationWatcherId] = useState<number | null>(null);
   const [routeConfig, setRouteConfig] = useState<RouteConfig | null>(null);
+  const [driverProfile, setDriverProfile] = useState<Driver | null>(loggedInDriver);
 
   useEffect(() => {
-    if (loggedInDriver) {
-      const config = localStorage.getItem(`route_config_${loggedInDriver.phone}`);
-      if (config) {
-        setRouteConfig(JSON.parse(config));
+    async function loadProfile() {
+      try {
+        const data = await api.getDriverProfile();
+        if (data.driver) {
+          setDriverProfile(data.driver);
+        }
+        if (data.routeConfig) {
+          setRouteConfig(data.routeConfig);
+          if (data.routeConfig.isLive) {
+            setIsSharing(true);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading driver profile:', err);
       }
     }
-  }, [loggedInDriver]);
+    loadProfile();
+  }, []);
 
   const startSharingLocation = () => {
-    if (!navigator.geolocation || !routeConfig) return;
+    if (!routeConfig || !routeConfig.routeId) return;
 
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        const locationData = {
-          lat: latitude,
-          lng: longitude,
-          timestamp: new Date().getTime()
-        };
-        localStorage.setItem(`bus_location_${routeConfig.routeId}`, JSON.stringify(locationData));
-      },
-      (error) => {
-        console.error("Error getting location:", error);
-        setIsSharing(false);
-        setLocationWatcherId(null);
-      },
-      { enableHighAccuracy: true }
-    );
+    // Notify backend via socket
+    socketService.startDriverTracking(routeConfig.routeId);
 
-    setLocationWatcherId(watchId);
+    if (navigator.geolocation) {
+      const watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          socketService.updateDriverLocation({
+            routeId: routeConfig.routeId,
+            lat: latitude,
+            lng: longitude,
+          });
+        },
+        (error) => {
+          console.error("Error getting live position:", error);
+        },
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+      );
+      setLocationWatcherId(watchId);
+    }
+
     setIsSharing(true);
   };
 
   const stopSharingLocation = () => {
+    if (routeConfig && routeConfig.routeId) {
+      socketService.stopDriverTracking(routeConfig.routeId);
+    }
     if (locationWatcherId !== null) {
       navigator.geolocation.clearWatch(locationWatcherId);
       setLocationWatcherId(null);
-      setIsSharing(false);
     }
+    setIsSharing(false);
   };
 
   const toggleLocationSharing = () => {
@@ -70,12 +90,11 @@ export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout
 
   const handleLogout = () => {
     stopSharingLocation();
+    localStorage.removeItem('driver_token');
     onLogout();
   };
 
-  if (!loggedInDriver || !routeConfig) {
-    return null;
-  }
+  const activeDriver = driverProfile || loggedInDriver;
 
   return (
     <div className="h-full flex flex-col">
@@ -85,12 +104,12 @@ export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout
           variant="outline" 
           size="sm"
           onClick={() => onShowScreen('driverConfig')}
-          className="flex items-center gap-2"
+          className="flex items-center gap-2 text-xs"
         >
           <Route size={16} />
           Edit Route
         </Button>
-        <h1 className="font-semibold">Driver Dashboard</h1>
+        <h1 className="font-semibold text-base">Driver Dashboard</h1>
         <Button 
           variant="ghost" 
           size="sm"
@@ -109,142 +128,115 @@ export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="relative">
+          <div className="relative inline-block">
             <Avatar className="mx-auto mb-4 w-16 h-16">
-              <AvatarFallback className="bg-indigo-100 text-indigo-600">
-                {loggedInDriver.name.charAt(0).toUpperCase()}
+              <AvatarFallback className="bg-indigo-100 text-indigo-600 font-bold text-xl">
+                {activeDriver?.name ? activeDriver.name.charAt(0).toUpperCase() : 'D'}
               </AvatarFallback>
             </Avatar>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => onShowScreen('driverEdit')}
-              className="absolute top-0 right-0 p-2 hover:bg-gray-100 rounded-full"
+              className="absolute -bottom-1 -right-1 p-1 hover:bg-gray-100 rounded-full bg-white shadow border h-7 w-7"
             >
-              <Edit size={16} />
+              <Edit size={12} className="text-gray-600" />
             </Button>
           </div>
-          <h2>Welcome, {loggedInDriver.name}</h2>
-          <p className="text-muted-foreground">Ready to start your route</p>
+
+          <h2 className="font-bold text-lg">{activeDriver?.name || 'Driver'}</h2>
+          <p className="text-muted-foreground text-sm">{activeDriver?.phone || ''}</p>
+          
+          <Badge 
+            variant={isSharing ? "default" : "secondary"} 
+            className={`mt-2 ${isSharing ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}
+          >
+            {isSharing ? "🟢 Live Tracking Active" : "⚪ Offline"}
+          </Badge>
         </motion.div>
 
-      {/* Route Information */}
-      <motion.div 
-        className="space-y-4 mb-8"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
-      >
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <Bus size={20} />
-              Current Route
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Bus Number:</span>
-                <Badge variant="secondary" className="font-mono">
-                  {routeConfig.routeId}
-                </Badge>
+        {/* Location Toggle Button */}
+        <motion.div 
+          className="mb-8"
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <Button
+            onClick={toggleLocationSharing}
+            className={`w-full h-16 text-lg font-semibold rounded-2xl shadow-lg transition-all ${
+              isSharing 
+                ? 'bg-red-500 hover:bg-red-600 text-white' 
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+            }`}
+          >
+            {isSharing ? (
+              <div className="flex items-center gap-3">
+                <Square className="animate-pulse" size={24} />
+                Stop Location Sharing
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Schedule:</span>
-                <div className="flex items-center gap-1 text-sm">
-                  <Clock size={14} />
-                  {routeConfig.startTime} - {routeConfig.endTime}
-                </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <Navigation size={24} />
+                Start Location Sharing
               </div>
-              <div className="flex items-start justify-between">
-                <span className="text-muted-foreground">Stops:</span>
-                <div className="text-right text-sm max-w-[180px]">
-                  <div className="flex items-center gap-1 mb-1">
-                    <Route size={14} />
-                    {routeConfig.stops.length} stops
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {routeConfig.stops.slice(0, 2).map(stop => 
-                      stop.charAt(0).toUpperCase() + stop.slice(1)
-                    ).join(' → ')}
-                    {routeConfig.stops.length > 2 && '...'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Location Status */}
-      <motion.div 
-        className="mb-8"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-      >
-        <Card className={`border-2 ${isSharing ? 'border-green-200 bg-green-50' : 'border-gray-200'}`}>
-          <CardContent className="p-6 text-center">
-            <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center mb-4 ${
-              isSharing ? 'bg-green-100' : 'bg-gray-100'
-            }`}>
-              {isSharing ? (
-                <Navigation className="text-green-600" size={24} />
-              ) : (
-                <MapPin className="text-gray-400" size={24} />
-              )}
-            </div>
-            <h3 className="mb-2">Location Sharing</h3>
-            <p className={`text-sm mb-4 ${isSharing ? 'text-green-600' : 'text-muted-foreground'}`}>
-              Status: {isSharing ? 'ACTIVE' : 'INACTIVE'}
-            </p>
-            {isSharing && (
-              <p className="text-xs text-muted-foreground">
-                Your location is being shared with passengers
-              </p>
             )}
-          </CardContent>
-        </Card>
-      </motion.div>
+          </Button>
+        </motion.div>
 
-      {/* Actions */}
-      <motion.div 
-        className="flex-1 flex flex-col justify-end space-y-4"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.3 }}
-      >
-        <Button 
-          onClick={toggleLocationSharing}
-          className={`w-full h-14 text-white transition-all duration-300 ${
-            isSharing 
-              ? 'bg-red-600 hover:bg-red-700' 
-              : 'bg-green-600 hover:bg-green-700'
-          }`}
-        >
-          {isSharing ? (
-            <>
-              <Square className="mr-2" size={20} />
-              Stop Sharing Location
-            </>
-          ) : (
-            <>
-              <Navigation className="mr-2" size={20} />
-              Start Sharing Location
-            </>
-          )}
-        </Button>
+        {/* Route Information */}
+        {routeConfig ? (
+          <motion.div 
+            className="space-y-4"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+          >
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Bus size={18} />
+                  Assigned Route Details
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex justify-between items-center text-sm border-b pb-2">
+                  <span className="text-muted-foreground">Bus / Route Number:</span>
+                  <span className="font-semibold text-indigo-600">{routeConfig.routeId}</span>
+                </div>
 
-        <Button 
-          variant="outline" 
-          onClick={() => onShowScreen('driverEdit')}
-          className="w-full h-12"
-        >
-          <Edit className="mr-2" size={18} />
-          Edit Profile
-        </Button>
-      </motion.div>
+                <div className="flex justify-between items-center text-sm border-b pb-2">
+                  <span className="text-muted-foreground">Schedule:</span>
+                  <span className="font-medium flex items-center gap-1">
+                    <Clock size={14} />
+                    {routeConfig.startTime} - {routeConfig.endTime}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-muted-foreground text-sm flex items-center gap-1 mb-2">
+                    <MapPin size={14} />
+                    Stops ({routeConfig.stops.length}):
+                  </span>
+                  <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                    {routeConfig.stops.map((stop, index) => (
+                      <Badge key={index} variant="secondary" className="capitalize text-xs">
+                        {index + 1}. {stop}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ) : (
+          <Card className="text-center p-6">
+            <p className="text-muted-foreground text-sm mb-4">No route configured yet.</p>
+            <Button onClick={() => onShowScreen('driverConfig')} className="bg-indigo-600 text-white">
+              Configure Route Now
+            </Button>
+          </Card>
+        )}
       </div>
     </div>
   );

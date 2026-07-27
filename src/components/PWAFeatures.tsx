@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { Download, Wifi, WifiOff, RefreshCw, Smartphone, X } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {

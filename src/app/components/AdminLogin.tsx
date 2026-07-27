@@ -6,6 +6,7 @@ import { Label } from './ui/label';
 import { ArrowLeft, Shield, Home, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { Screen, Admin } from '../App';
+import { api } from '../services/api';
 
 interface AdminLoginProps {
   onShowScreen: (screen: Screen) => void;
@@ -21,32 +22,32 @@ export default function AdminLogin({ onShowScreen, onGoBack, onAdminLogin, onSho
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!username.trim() || !password) {
+      onShowNotification('Username and password are required.');
+      return;
+    }
+
     setIsLoading(true);
 
-    // Demo admin credentials - in production, this would be properly secured
-    const validAdmins = [
-      { username: 'admin', password: 'admin123' },
-      { username: 'citybus_admin', password: 'citybus2024' }
-    ];
+    try {
+      const response = await api.adminLogin({
+        username: username.trim(),
+        password,
+      });
 
-    setTimeout(() => {
-      const adminExists = validAdmins.find(admin => admin.username === username);
-      
-      if (adminExists) {
-        if (adminExists.password === password) {
-          onAdminLogin(adminExists);
-          onShowNotification('Welcome to Admin Portal! 🛡️');
-          onShowScreen('adminDashboard');
-        } else {
-          onShowNotification('Incorrect credentials');
-        }
-      } else {
-        onShowNotification('User does not exist');
+      if (response.admin) {
+        onAdminLogin(response.admin);
+        onShowNotification('Welcome to Admin Portal! 🛡️');
+        onShowScreen('adminDashboard');
       }
+    } catch (error: any) {
+      console.error('Admin login error:', error);
+      onShowNotification(error.message || 'Invalid admin credentials');
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   return (
@@ -61,7 +62,7 @@ export default function AdminLogin({ onShowScreen, onGoBack, onAdminLogin, onSho
         >
           <ArrowLeft size={20} />
         </Button>
-        <h1 className="font-semibold">Admin Portal</h1>
+        <h1 className="font-semibold text-base">Admin Portal</h1>
         <Button 
           variant="ghost" 
           size="sm"
@@ -89,8 +90,8 @@ export default function AdminLogin({ onShowScreen, onGoBack, onAdminLogin, onSho
             <div className="bg-red-100 rounded-full p-6 w-fit mx-auto mb-4">
               <Shield size={32} className="text-red-600" />
             </div>
-            <h2>Admin Access</h2>
-            <p className="text-muted-foreground text-sm">
+            <h2 className="font-bold text-xl">Admin Access</h2>
+            <p className="text-muted-foreground text-xs mt-1">
               Secure login for administrators
             </p>
           </motion.div>
@@ -102,80 +103,62 @@ export default function AdminLogin({ onShowScreen, onGoBack, onAdminLogin, onSho
             transition={{ delay: 0.3 }}
           >
             <Card>
-              <CardHeader>
-                <CardTitle>Sign In</CardTitle>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-center text-sm font-semibold">Administrator Sign In</CardTitle>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="username">Username</Label>
+                    <Label htmlFor="username" className="text-xs">Username</Label>
                     <Input
                       id="username"
                       type="text"
+                      placeholder="Enter admin username"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Enter admin username"
+                      className="h-11"
                       required
-                      className="bg-input-background"
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
+                    <Label htmlFor="password" className="text-xs">Password</Label>
                     <div className="relative">
                       <Input
                         id="password"
-                        type={showPassword ? 'text' : 'password'}
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter admin password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Enter admin password"
+                        className="h-11 pr-10"
                         required
-                        className="bg-input-background pr-10"
                       />
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 h-auto"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                       >
-                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        {showPassword ? (
+                          <EyeOff size={16} className="text-gray-500" />
+                        ) : (
+                          <Eye size={16} className="text-gray-500" />
+                        )}
                       </Button>
                     </div>
                   </div>
 
                   <Button 
                     type="submit" 
-                    className="w-full bg-red-600 hover:bg-red-700 text-white"
+                    className="w-full h-11 bg-red-600 hover:bg-red-700 text-white font-medium mt-6"
                     disabled={isLoading}
                   >
-                    {isLoading ? (
-                      <div className="flex items-center">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        Signing In...
-                      </div>
-                    ) : (
-                      <>
-                        <Shield className="mr-2" size={18} />
-                        Sign In as Admin
-                      </>
-                    )}
+                    {isLoading ? "Authenticating..." : "Login to Admin Portal"}
                   </Button>
                 </form>
               </CardContent>
             </Card>
-          </motion.div>
-
-          {/* Demo Credentials */}
-          <motion.div 
-            className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-          >
-            <p className="text-xs text-amber-800 mb-2 font-medium">Demo Credentials:</p>
-            <p className="text-xs text-amber-700">Username: admin</p>
-            <p className="text-xs text-amber-700">Password: admin123</p>
           </motion.div>
         </motion.div>
       </div>

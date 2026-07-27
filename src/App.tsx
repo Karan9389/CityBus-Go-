@@ -4,23 +4,24 @@ import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Badge } from './components/ui/badge';
 import { Avatar, AvatarFallback } from './components/ui/avatar';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { ArrowLeft, MapPin, Users, Bus, Navigation, UserCog, Search, Play, Square, Clock, Route } from 'lucide-react';
 
-import WelcomeScreen from './components/WelcomeScreen';
-import DriverLogin from './components/DriverLogin';
-import DriverRegister from './components/DriverRegister';
-import DriverConfig from './components/DriverConfig';
-import DriverDashboard from './components/DriverDashboard';
-import DriverEdit from './components/DriverEdit';
-import CommuterSearch from './components/CommuterSearch';
-import BusList from './components/BusList';
-import MapScreen from './components/MapScreen';
-import PWAFeatures from './components/PWAFeatures';
-import AdminLogin from './components/AdminLogin';
-import AdminDashboard from './components/AdminDashboard';
-import AdminDriverDetail from './components/AdminDriverDetail';
-import AdminDriverCreate from './components/AdminDriverCreate';
+import WelcomeScreen from './app/components/WelcomeScreen';
+import DriverLogin from './app/components/DriverLogin';
+import DriverRegister from './app/components/DriverRegister';
+import DriverConfig from './app/components/DriverConfig';
+import DriverDashboard from './app/components/DriverDashboard';
+import DriverEdit from './app/components/DriverEdit';
+import CommuterSearch from './app/components/CommuterSearch';
+import BusList from './app/components/BusList';
+import MapScreen from './app/components/MapScreen';
+import PWAFeatures from './app/components/PWAFeatures';
+import AdminLogin from './app/components/AdminLogin';
+import AdminDashboard from './app/components/AdminDashboard';
+import AdminDriverDetail from './app/components/AdminDriverDetail';
+import AdminDriverCreate from './app/components/AdminDriverCreate';
+import { api } from './app/services/api';
 
 export type Screen = 
   | 'welcome' 
@@ -41,12 +42,13 @@ export interface Driver {
   id: string;
   name: string;
   phone: string;
-  password: string;
+  password?: string;
 }
 
 export interface Admin {
   username: string;
-  password: string;
+  password?: string;
+  role?: string;
 }
 
 export interface RouteConfig {
@@ -54,6 +56,8 @@ export interface RouteConfig {
   startTime: string;
   endTime: string;
   stops: string[];
+  isLive?: boolean;
+  driver?: { name: string; phone: string };
 }
 
 export interface LocationData {
@@ -71,31 +75,42 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<RouteConfig[]>([]);
   const [trackingBus, setTrackingBus] = useState<string>('');
 
-  // Handle PWA shortcuts on app load
   useEffect(() => {
-    // Check URL parameters for shortcuts
-    const urlParams = new URLSearchParams(window.location.search);
-    const shortcut = urlParams.get('shortcut');
-    
-    if (shortcut === 'driver') {
-      showScreen('driverLogin');
-      toast('Welcome to Driver Portal! 🚌');
-    } else if (shortcut === 'commuter') {
-      showScreen('commuterSearch');
-      toast('Let\'s find your bus! 🔍');
+    async function checkExistingDriverSession() {
+      const driverToken = localStorage.getItem('driver_token');
+      if (driverToken) {
+        try {
+          const data = await api.getDriverProfile();
+          if (data.driver) {
+            setLoggedInDriver(data.driver);
+            if (data.routeConfig && data.routeConfig.routeId) {
+              setCurrentScreen('driverDashboard');
+              setScreenHistory(['welcome', 'driverDashboard']);
+            } else {
+              setCurrentScreen('driverConfig');
+              setScreenHistory(['welcome', 'driverConfig']);
+            }
+            toast(`Welcome back, ${data.driver.name}! 🚌`);
+            return;
+          }
+        } catch (err) {
+          localStorage.removeItem('driver_token');
+        }
+      }
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const shortcut = urlParams.get('shortcut');
+      
+      if (shortcut === 'driver') {
+        showScreen('driverLogin');
+        toast('Welcome to Driver Portal! 🚌');
+      } else if (shortcut === 'commuter') {
+        showScreen('commuterSearch');
+        toast('Let\'s find your bus! 🔍');
+      }
     }
-    
-    // Also check localStorage for backward compatibility
-    const storedShortcut = localStorage.getItem('pwa-shortcut');
-    if (storedShortcut === 'driver') {
-      localStorage.removeItem('pwa-shortcut');
-      showScreen('driverLogin');
-      toast('Welcome to Driver Portal! 🚌');
-    } else if (storedShortcut === 'commuter') {
-      localStorage.removeItem('pwa-shortcut');
-      showScreen('commuterSearch');
-      toast('Let\'s find your bus! 🔍');
-    }
+
+    checkExistingDriverSession();
   }, []);
 
   const showScreen = (screen: Screen) => {
@@ -121,6 +136,8 @@ export default function App() {
     setLoggedInDriver(null);
     setLoggedInAdmin(null);
     setSelectedDriverId('');
+    localStorage.removeItem('driver_token');
+    localStorage.removeItem('admin_token');
     resetToScreen('welcome');
   };
 
@@ -130,7 +147,6 @@ export default function App() {
 
   return (
     <>
-      {/* PWA Features Component */}
       <PWAFeatures />
       
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -140,131 +156,131 @@ export default function App() {
             <WelcomeScreen onShowScreen={showScreen} />
           )}
 
-        {currentScreen === 'driverLogin' && (
-          <DriverLogin 
-            onShowScreen={showScreen}
-            onGoBack={goBack}
-            onDriverLogin={setLoggedInDriver}
-            onShowNotification={showNotification}
-            onGoHome={goHome}
-          />
-        )}
+          {currentScreen === 'driverLogin' && (
+            <DriverLogin 
+              onShowScreen={showScreen}
+              onGoBack={goBack}
+              onDriverLogin={setLoggedInDriver}
+              onShowNotification={showNotification}
+              onGoHome={goHome}
+            />
+          )}
 
-        {currentScreen === 'driverRegister' && (
-          <DriverRegister 
-            onShowScreen={showScreen}
-            onGoBack={goBack}
-            onShowNotification={showNotification}
-            onDriverLogin={setLoggedInDriver}
-            onGoHome={goHome}
-          />
-        )}
+          {currentScreen === 'driverRegister' && (
+            <DriverRegister 
+              onShowScreen={showScreen}
+              onGoBack={goBack}
+              onShowNotification={showNotification}
+              onDriverLogin={setLoggedInDriver}
+              onGoHome={goHome}
+            />
+          )}
 
-        {currentScreen === 'driverConfig' && (
-          <DriverConfig 
-            loggedInDriver={loggedInDriver}
-            onShowScreen={showScreen}
-            onGoBack={goBack}
-            onShowNotification={showNotification}
-            onGoHome={goHome}
-          />
-        )}
+          {currentScreen === 'driverConfig' && (
+            <DriverConfig 
+              loggedInDriver={loggedInDriver}
+              onShowScreen={showScreen}
+              onGoBack={goBack}
+              onShowNotification={showNotification}
+              onGoHome={goHome}
+            />
+          )}
 
-        {currentScreen === 'driverDashboard' && (
-          <DriverDashboard 
-            loggedInDriver={loggedInDriver}
-            onShowScreen={showScreen}
-            onLogout={() => {
-              setLoggedInDriver(null);
-              resetToScreen('welcome');
-            }}
-            onGoHome={goHome}
-          />
-        )}
+          {currentScreen === 'driverDashboard' && (
+            <DriverDashboard 
+              loggedInDriver={loggedInDriver}
+              onShowScreen={showScreen}
+              onLogout={() => {
+                setLoggedInDriver(null);
+                resetToScreen('welcome');
+              }}
+              onGoHome={goHome}
+            />
+          )}
 
-        {currentScreen === 'driverEdit' && (
-          <DriverEdit 
-            loggedInDriver={loggedInDriver}
-            onGoBack={goBack}
-            onDriverUpdate={setLoggedInDriver}
-            onShowNotification={showNotification}
-            onGoHome={goHome}
-          />
-        )}
+          {currentScreen === 'driverEdit' && (
+            <DriverEdit 
+              loggedInDriver={loggedInDriver}
+              onGoBack={goBack}
+              onDriverUpdate={setLoggedInDriver}
+              onShowNotification={showNotification}
+              onGoHome={goHome}
+            />
+          )}
 
-        {currentScreen === 'commuterSearch' && (
-          <CommuterSearch 
-            onShowScreen={showScreen}
-            onGoBack={goBack}
-            onSearchResults={setSearchResults}
-            onShowNotification={showNotification}
-            onGoHome={goHome}
-          />
-        )}
+          {currentScreen === 'commuterSearch' && (
+            <CommuterSearch 
+              onShowScreen={showScreen}
+              onGoBack={goBack}
+              onSearchResults={setSearchResults}
+              onShowNotification={showNotification}
+              onGoHome={goHome}
+            />
+          )}
 
-        {currentScreen === 'busList' && (
-          <BusList 
-            searchResults={searchResults}
-            onShowScreen={showScreen}
-            onGoBack={goBack}
-            onTrackBus={(busId: string) => {
-              setTrackingBus(busId);
-              showScreen('map');
-            }}
-            onGoHome={goHome}
-          />
-        )}
+          {currentScreen === 'busList' && (
+            <BusList 
+              searchResults={searchResults}
+              onShowScreen={showScreen}
+              onGoBack={goBack}
+              onTrackBus={(busId: string) => {
+                setTrackingBus(busId);
+                showScreen('map');
+              }}
+              onGoHome={goHome}
+            />
+          )}
 
-        {currentScreen === 'map' && (
-          <MapScreen 
-            trackingBus={trackingBus}
-            onShowScreen={showScreen}
-            onGoBack={goBack}
-            onGoHome={goHome}
-          />
-        )}
+          {currentScreen === 'map' && (
+            <MapScreen 
+              trackingBus={trackingBus}
+              onShowScreen={showScreen}
+              onGoBack={goBack}
+              onGoHome={goHome}
+            />
+          )}
 
-        {currentScreen === 'adminLogin' && (
-          <AdminLogin 
-            onShowScreen={showScreen}
-            onGoBack={goBack}
-            onAdminLogin={setLoggedInAdmin}
-            onShowNotification={showNotification}
-            onGoHome={goHome}
-          />
-        )}
+          {currentScreen === 'adminLogin' && (
+            <AdminLogin 
+              onShowScreen={showScreen}
+              onGoBack={goBack}
+              onAdminLogin={setLoggedInAdmin}
+              onShowNotification={showNotification}
+              onGoHome={goHome}
+            />
+          )}
 
-        {currentScreen === 'adminDashboard' && (
-          <AdminDashboard 
-            loggedInAdmin={loggedInAdmin}
-            onShowScreen={showScreen}
-            onSelectDriver={setSelectedDriverId}
-            onLogout={() => {
-              setLoggedInAdmin(null);
-              resetToScreen('welcome');
-            }}
-            onGoHome={goHome}
-          />
-        )}
+          {currentScreen === 'adminDashboard' && (
+            <AdminDashboard 
+              loggedInAdmin={loggedInAdmin}
+              onShowScreen={showScreen}
+              onSelectDriver={setSelectedDriverId}
+              onLogout={() => {
+                setLoggedInAdmin(null);
+                resetToScreen('welcome');
+              }}
+              onGoHome={goHome}
+            />
+          )}
 
-        {currentScreen === 'adminDriverDetail' && (
-          <AdminDriverDetail 
-            driverId={selectedDriverId}
-            onShowScreen={showScreen}
-            onGoBack={goBack}
-            onShowNotification={showNotification}
-            onGoHome={goHome}
-          />
-        )}
+          {currentScreen === 'adminDriverDetail' && (
+            <AdminDriverDetail 
+              driverId={selectedDriverId}
+              onShowScreen={showScreen}
+              onGoBack={goBack}
+              onShowNotification={showNotification}
+              onGoHome={goHome}
+            />
+          )}
 
-        {currentScreen === 'adminDriverCreate' && (
-          <AdminDriverCreate 
-            onShowScreen={showScreen}
-            onGoBack={goBack}
-            onShowNotification={showNotification}
-            onGoHome={goHome}
-          />
-        )}
+          {currentScreen === 'adminDriverCreate' && (
+            <AdminDriverCreate 
+              onShowScreen={showScreen}
+              onGoBack={goBack}
+              onShowNotification={showNotification}
+              onGoHome={goHome}
+            />
+          )}
 
         </div>
       </div>
