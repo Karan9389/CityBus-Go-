@@ -133,7 +133,7 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
     setRouteMarkers([]);
 
     // Generate mock/approximate coordinates for stops for display
-    const coordinates: [number, number][] = routeConfig.stops.map((_, index) => {
+    const coordinates: [number, number][] = routeConfig.stops.map((_: any, index: number) => {
       return [20.5937 + index * 0.015, 78.9629 + index * 0.02];
     });
 
