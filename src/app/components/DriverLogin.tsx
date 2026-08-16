@@ -23,7 +23,7 @@ interface LoginFormData {
 }
 
 export default function DriverLogin({ onShowScreen, onGoBack, onDriverLogin, onShowNotification, onGoHome }: DriverLoginProps) {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginFormData>();
+  const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<LoginFormData>();
 
   const onSubmit = async (data: LoginFormData) => {
     try {
@@ -33,6 +33,7 @@ export default function DriverLogin({ onShowScreen, onGoBack, onDriverLogin, onS
       });
 
       if (response.driver) {
+        reset();
         onDriverLogin(response.driver);
         
         if (response.routeConfig && response.routeConfig.routeId) {
@@ -60,6 +61,7 @@ export default function DriverLogin({ onShowScreen, onGoBack, onDriverLogin, onS
             size="sm"
             onClick={onGoBack}
             className="p-2 hover:bg-gray-100 rounded-full"
+            aria-label="Go back"
           >
             <ArrowLeft size={20} />
           </Button>
@@ -69,7 +71,8 @@ export default function DriverLogin({ onShowScreen, onGoBack, onDriverLogin, onS
           variant="ghost" 
           size="sm"
           onClick={onGoHome}
-          className="p-2 hover:bg-gray-100 rounded-full"          aria-label="Go back"          aria-label="Go to home"
+          className="p-2 hover:bg-gray-100 rounded-full"
+          aria-label="Go to home"
         >
           <Home size={20} />
         </Button>
