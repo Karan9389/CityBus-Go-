@@ -69,7 +69,7 @@ export default function DriverLogin({ onShowScreen, onGoBack, onDriverLogin, onS
           variant="ghost" 
           size="sm"
           onClick={onGoHome}
-          className="p-2 hover:bg-gray-100 rounded-full"
+          className="p-2 hover:bg-gray-100 rounded-full"          aria-label="Go back"          aria-label="Go to home"
         >
           <Home size={20} />
         </Button>
@@ -108,9 +108,10 @@ export default function DriverLogin({ onShowScreen, onGoBack, onDriverLogin, onS
                     {...register('phone', { 
                       required: 'Phone number is required',
                       pattern: {
-                        value: /^[0-9+\-\s()]+$/,
-                        message: 'Please enter a valid phone number'
-                      }
+                        value: /^\+?[1-9]\d{1,14}$/,
+                        message: 'Please enter a valid phone number (e.g., +1234567890)'
+                      },
+                      setValueAs: (value) => value.trim()
                     })}
                   />
                   {errors.phone && (
@@ -126,7 +127,7 @@ export default function DriverLogin({ onShowScreen, onGoBack, onDriverLogin, onS
                   <Input
                     id="password"
                     type="password"
-                    placeholder="Enter your password"
+                    placeholder="Enter your password (min. 4 characters)"
                     className="h-12"
                     {...register('password', { 
                       required: 'Password is required',
@@ -148,7 +149,17 @@ export default function DriverLogin({ onShowScreen, onGoBack, onDriverLogin, onS
                 >
                   {isSubmitting ? 'Signing in...' : 'Sign In'}
                 </Button>
-                
+
+                <div className="text-center mt-4">
+                  <p className="text-sm text-muted-foreground mb-2">Forgot your password?</p>
+                  <Button 
+                    variant="link" 
+                    className="text-sm text-indigo-600 hover:text-indigo-700 p-0"
+                    onClick={() => onShowNotification('Password reset feature coming soon')}
+                  >
+                    Request password reset
+                  </Button>
+                </div>
               </form>
             </CardContent>
           </Card>
