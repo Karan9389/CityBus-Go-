@@ -39,25 +39,36 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
 
   // Load Leaflet dynamically
   useEffect(() => {
+    let isMounted = true;
+
     const loadLeaflet = async () => {
       if (typeof window !== 'undefined' && !window.L) {
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-        document.head.appendChild(link);
+        if (!document.querySelector('link[href*="leaflet.css"]')) {
+          const link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+          document.head.appendChild(link);
+        }
 
-        const script = document.createElement('script');
-        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-        
-        return new Promise<void>((resolve) => {
-          script.onload = () => resolve();
+        if (!document.querySelector('script[src*="leaflet.js"]')) {
+          const script = document.createElement('script');
+          script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
           document.head.appendChild(script);
-        });
+
+          await new Promise<void>((resolve) => {
+            script.onload = () => resolve();
+            script.onerror = () => resolve();
+          });
+        }
       }
     };
 
     loadLeaflet().then(() => {
-      if (mapRef.current && window.L && !map) {
+      if (isMounted && mapRef.current && window.L && !map) {
+        if ((mapRef.current as any)._leaflet_id) {
+          (mapRef.current as any)._leaflet_id = null;
+        }
+
         const newMap = window.L.map(mapRef.current, {
           zoomControl: false
         }).setView([20.5937, 78.9629], 6);
@@ -74,6 +85,19 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
         setMap(newMap);
       }
     });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [map]);
+
+  // Clean up map instance on unmount
+  useEffect(() => {
+    return () => {
+      if (map) {
+        map.remove();
+      }
+    };
   }, [map]);
 
   // Fetch route config & join socket room
