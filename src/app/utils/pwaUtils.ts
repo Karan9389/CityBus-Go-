@@ -97,7 +97,7 @@ export const clearAppCache = async (): Promise<void> => {
 export const scheduleBackgroundSync = (tag: string): void => {
   if ('serviceWorker' in navigator && 'sync' in window.ServiceWorkerRegistration.prototype) {
     navigator.serviceWorker.ready.then((registration) => {
-      return registration.sync.register(tag);
+      return (registration as any).sync?.register(tag);
     }).catch((error) => {
       console.warn('Background sync registration failed:', error);
     });
