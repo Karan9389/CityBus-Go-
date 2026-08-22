@@ -20,7 +20,10 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
 
-    /* Types */
+    /* Types and Paths */
+    "paths": {
+      "@/*": ["./src/app/*"]
+    },
     "types": ["vite/client"]
   },
   "include": ["src"]
