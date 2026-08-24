@@ -21,7 +21,9 @@ import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
 import AdminDriverDetail from './components/AdminDriverDetail';
 import AdminDriverCreate from './components/AdminDriverCreate';
+import { Toaster } from './components/ui/sonner';
 import { api } from './services/api';
+import { disconnectSocket } from './services/socket';
 
 export type Screen = 
   | 'welcome' 
@@ -135,6 +137,7 @@ export default function App() {
   };
 
   const goHome = () => {
+    disconnectSocket();
     setLoggedInDriver(null);
     setLoggedInAdmin(null);
     setSelectedDriverId('');
@@ -149,6 +152,9 @@ export default function App() {
 
   return (
     <>
+      {/* Toast Notifications */}
+      <Toaster position="top-center" richColors />
+
       {/* PWA Features Component */}
       <PWAFeatures />
       
@@ -194,6 +200,7 @@ export default function App() {
               loggedInDriver={loggedInDriver}
               onShowScreen={showScreen}
               onLogout={() => {
+                disconnectSocket();
                 setLoggedInDriver(null);
                 resetToScreen('welcome');
               }}
@@ -259,6 +266,7 @@ export default function App() {
               onShowScreen={showScreen}
               onSelectDriver={setSelectedDriverId}
               onLogout={() => {
+                disconnectSocket();
                 setLoggedInAdmin(null);
                 resetToScreen('welcome');
               }}
