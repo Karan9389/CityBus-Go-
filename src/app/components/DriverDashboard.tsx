@@ -42,6 +42,15 @@ export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout
     loadProfile();
   }, []);
 
+  // Cleanup geolocation watcher on unmount
+  useEffect(() => {
+    return () => {
+      if (locationWatcherId !== null) {
+        navigator.geolocation.clearWatch(locationWatcherId);
+      }
+    };
+  }, [locationWatcherId]);
+
   const startSharingLocation = () => {
     if (!routeConfig || !routeConfig.routeId) return;
 
