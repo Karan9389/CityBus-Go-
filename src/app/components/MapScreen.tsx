@@ -227,6 +227,46 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
     }
   }, [map, busLocation]);
 
+  // Update user marker when user location is available
+  useEffect(() => {
+    if (!map || !window.L || !userLocation) return;
+
+    const { lat, lng } = userLocation;
+
+    if (!userMarker) {
+      const userIcon = window.L.divIcon({
+        html: `
+          <div class="flex items-center justify-center w-8 h-8 bg-blue-500 text-white rounded-full shadow-lg border-2 border-white animate-pulse">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="12" r="8"/>
+            </svg>
+          </div>
+        `,
+        className: 'user-marker',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      });
+
+      const marker = window.L.marker([lat, lng], { icon: userIcon }).addTo(map);
+      marker.bindPopup('Your Current Location');
+      setUserMarker(marker);
+    } else {
+      userMarker.setLatLng([lat, lng]);
+    }
+  }, [map, userLocation, userMarker]);
+
+  // Recalculate ETA automatically when bus or user position updates
+  useEffect(() => {
+    if (etaEnabled && userLocation && busLocation) {
+      const dLat = (userLocation.lat - busLocation.lat) * 111; // approx km
+      const dLng = (userLocation.lng - busLocation.lng) * 111;
+      const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+      const timeMin = Math.round((dist / 25) * 60);
+
+      setEta(timeMin <= 1 ? 'Arriving now' : `${timeMin} minutes`);
+    }
+  }, [busLocation, userLocation, etaEnabled]);
+
   const handleToggleETA = () => {
     if (!etaEnabled) {
       if (!navigator.geolocation) {
@@ -250,6 +290,8 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
             const timeMin = Math.round((dist / 25) * 60);
 
             setEta(timeMin <= 1 ? 'Arriving now' : `${timeMin} minutes`);
+          } else {
+            setEta('Awaiting bus location...');
           }
           setShowingEta(false);
         },
