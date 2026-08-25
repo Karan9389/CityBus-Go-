@@ -22,6 +22,13 @@ export const getSocket = (): Socket => {
   return socket;
 };
 
+export const disconnectSocket = () => {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+};
+
 export const socketService = {
   // Driver socket actions
   startDriverTracking: (routeId: string) => {
