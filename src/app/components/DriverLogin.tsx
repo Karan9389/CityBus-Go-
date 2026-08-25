@@ -111,8 +111,8 @@ export default function DriverLogin({ onShowScreen, onGoBack, onDriverLogin, onS
                     {...register('phone', { 
                       required: 'Phone number is required',
                       pattern: {
-                        value: /^\+?[1-9]\d{1,14}$/,
-                        message: 'Please enter a valid phone number (e.g., +1234567890)'
+                        value: /^[0-9+\-\s()]+$/,
+                        message: 'Please enter a valid phone number'
                       },
                       setValueAs: (value) => value.trim()
                     })}
