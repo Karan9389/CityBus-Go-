@@ -31,26 +31,44 @@ export default function AdminDriverCreate({ onShowScreen, onGoBack, onShowNotifi
   });
 
   const handleSave = async () => {
-    if (!formData.name.trim() || !formData.phone.trim() || !formData.password.trim()) {
+    const cleanName = formData.name.trim();
+    const cleanPhone = formData.phone.trim();
+    const cleanPassword = formData.password.trim();
+
+    if (!cleanName || !cleanPhone || !cleanPassword) {
       onShowNotification('Please fill in driver name, phone, and password.');
       return;
     }
 
+    if (cleanPassword.length < 4) {
+      onShowNotification('Password must be at least 4 characters.');
+      return;
+    }
+
+    const cleanRouteId = routeData.routeId.trim();
     const validStops = routeData.stops.map(s => s.trim()).filter(Boolean);
+
+    // If partial route data is entered, check completeness
+    if (cleanRouteId || routeData.startTime || routeData.endTime || validStops.length > 0) {
+      if (!cleanRouteId || !routeData.startTime || !routeData.endTime || validStops.length === 0) {
+        onShowNotification('To assign a route, please provide Route ID, Start Time, End Time, and at least 1 stop.');
+        return;
+      }
+    }
 
     setIsSubmitting(true);
     try {
       await api.createDriver({
-        name: formData.name.trim(),
-        phone: formData.phone.trim(),
-        password: formData.password.trim(),
-        routeId: routeData.routeId.trim() || undefined,
+        name: cleanName,
+        phone: cleanPhone,
+        password: cleanPassword,
+        routeId: cleanRouteId || undefined,
         startTime: routeData.startTime || undefined,
         endTime: routeData.endTime || undefined,
         stops: validStops.length > 0 ? validStops : undefined,
       });
 
-      onShowNotification(`Driver ${formData.name} created successfully! ✅`);
+      onShowNotification(`Driver ${cleanName} created successfully! ✅`);
       onGoBack();
     } catch (err: any) {
       console.error('Error creating driver:', err);
