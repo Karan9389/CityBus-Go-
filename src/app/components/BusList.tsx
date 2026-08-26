@@ -4,10 +4,10 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { ArrowLeft, Bus, Clock, MapPin, Navigation, Wifi, WifiOff, Home } from 'lucide-react';
 import { motion } from 'motion/react';
-import type { Screen } from '../App';
+import type { Screen, RouteConfig } from '../App';
 
 interface BusListProps {
-  searchResults: any[];
+  searchResults: RouteConfig[];
   onShowScreen: (screen: Screen) => void;
   onGoBack: () => void;
   onTrackBus: (busId: string) => void;
