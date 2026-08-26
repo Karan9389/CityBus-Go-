@@ -65,20 +65,37 @@ export default function AdminDriverDetail({ driverId, onShowScreen, onGoBack, on
   };
 
   const handleSave = async () => {
-    if (!formData.name.trim() || !formData.phone.trim()) {
+    const cleanName = formData.name.trim();
+    const cleanPhone = formData.phone.trim();
+
+    if (!cleanName || !cleanPhone) {
       onShowNotification('Driver name and phone number are required.');
       return;
     }
 
+    if (formData.password && formData.password.trim().length > 0 && formData.password.trim().length < 4) {
+      onShowNotification('New password must be at least 4 characters.');
+      return;
+    }
+
+    const cleanRouteId = routeData.routeId.trim();
     const validStops = routeData.stops.map(s => s.trim()).filter(Boolean);
+
+    // If partial route data is entered, check completeness
+    if (cleanRouteId || routeData.startTime || routeData.endTime || validStops.length > 0) {
+      if (!cleanRouteId || !routeData.startTime || !routeData.endTime || validStops.length === 0) {
+        onShowNotification('To update route, please provide Route ID, Start Time, End Time, and at least 1 stop.');
+        return;
+      }
+    }
 
     setIsSubmitting(true);
     try {
       await api.updateDriver(driverId, {
-        name: formData.name.trim(),
-        phone: formData.phone.trim(),
+        name: cleanName,
+        phone: cleanPhone,
         password: formData.password ? formData.password.trim() : undefined,
-        routeId: routeData.routeId.trim() || undefined,
+        routeId: cleanRouteId || undefined,
         startTime: routeData.startTime || undefined,
         endTime: routeData.endTime || undefined,
         stops: validStops.length > 0 ? validStops : undefined,
