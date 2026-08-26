@@ -52,29 +52,36 @@ export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout
   }, [locationWatcherId]);
 
   const startSharingLocation = () => {
-    if (!routeConfig || !routeConfig.routeId) return;
+    if (!routeConfig || !routeConfig.routeId) {
+      alert("Please configure a route before starting live tracking.");
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your device or browser.");
+      return;
+    }
 
     // Notify backend via socket
     socketService.startDriverTracking(routeConfig.routeId);
 
-    if (navigator.geolocation) {
-      const watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          socketService.updateDriverLocation({
-            routeId: routeConfig.routeId,
-            lat: latitude,
-            lng: longitude,
-          });
-        },
-        (error) => {
-          console.error("Error getting live position:", error);
-        },
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
-      );
-      setLocationWatcherId(watchId);
-    }
-
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        socketService.updateDriverLocation({
+          routeId: routeConfig.routeId,
+          lat: latitude,
+          lng: longitude,
+        });
+      },
+      (error) => {
+        console.error("Error getting live position:", error);
+        alert(`Location tracking error: ${error.message}. Please verify GPS and permissions.`);
+        stopSharingLocation();
+      },
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+    );
+    setLocationWatcherId(watchId);
     setIsSharing(true);
   };
 
