@@ -43,20 +43,35 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
   };
 
   const onSubmit = async (data: ConfigFormData) => {
-    if (stops.length < 1) {
+    const cleanBusNumber = data.busNumber.trim();
+    const cleanStartTime = data.startTime.trim();
+    const cleanEndTime = data.endTime.trim();
+    const validStops = stops.map(s => s.trim()).filter(Boolean);
+
+    if (!cleanBusNumber) {
+      onShowNotification("Please enter a valid Route / Bus Number.");
+      return;
+    }
+
+    if (!cleanStartTime || !cleanEndTime) {
+      onShowNotification("Please specify both Start Time and End Time.");
+      return;
+    }
+
+    if (validStops.length < 1) {
       onShowNotification("Please add at least 1 bus stop.");
       return;
     }
 
     try {
       await api.saveRouteConfig({
-        routeId: data.busNumber.trim(),
-        startTime: data.startTime,
-        endTime: data.endTime,
-        stops: stops,
+        routeId: cleanBusNumber,
+        startTime: cleanStartTime,
+        endTime: cleanEndTime,
+        stops: validStops,
       });
 
-      onShowNotification("Route configured successfully!");
+      onShowNotification("Route configured successfully! ✅");
       onShowScreen('driverDashboard');
     } catch (error: any) {
       console.error('Save route error:', error);
