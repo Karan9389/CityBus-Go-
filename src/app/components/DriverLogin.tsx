@@ -106,15 +106,15 @@ export default function DriverLogin({ onShowScreen, onGoBack, onDriverLogin, onS
                   <Input
                     id="phone"
                     type="tel"
-                    placeholder="Enter your phone number"
+                    placeholder="Enter your phone number (e.g. +1234567890)"
                     className="h-12"
                     {...register('phone', { 
                       required: 'Phone number is required',
                       pattern: {
-                        value: /^[0-9+\-\s()]+$/,
-                        message: 'Please enter a valid phone number'
+                        value: /^[0-9+\-\s()]{7,20}$/,
+                        message: 'Please enter a valid phone number (at least 7 digits)'
                       },
-                      setValueAs: (value) => value.trim()
+                      setValueAs: (value) => (value ? String(value).trim() : '')
                     })}
                   />
                   {errors.phone && (
