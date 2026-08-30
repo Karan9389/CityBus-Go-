@@ -25,10 +25,17 @@ interface RegisterFormData {
 }
 
 export default function DriverRegister({ onShowScreen, onGoBack, onShowNotification, onDriverLogin, onGoHome }: DriverRegisterProps) {
-  const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<RegisterFormData>();
+  const { register, handleSubmit, watch, formState: { errors } } = useForm<RegisterFormData>();
   const [step, setStep] = useState(1);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [accountData, setAccountData] = useState<RegisterFormData>({
+    name: '',
+    phone: '',
+    password: '',
+    confirmPassword: ''
+  });
   const [routeData, setRouteData] = useState({
     routeId: '',
     startTime: '',
@@ -38,23 +45,42 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
   
   const password = watch('password');
 
-  const onSubmit = async (data: RegisterFormData) => {
-    if (step === 1) {
-      setStep(2);
+  const onStep1Submit = (data: RegisterFormData) => {
+    setAccountData(data);
+    setStep(2);
+  };
+
+  const handleFinalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!accountData.name || !accountData.phone || !accountData.password) {
+      onShowNotification('❌ Driver credentials missing. Please go back to step 1.');
+      setStep(1);
       return;
     }
 
     const validStops = routeData.stops.map(s => s.trim()).filter(Boolean);
-    if (!routeData.routeId.trim() || !routeData.startTime || !routeData.endTime || validStops.length === 0) {
-      onShowNotification('❌ Please complete all route details');
+    if (!routeData.routeId.trim()) {
+      onShowNotification('❌ Please enter a bus / route number.');
       return;
     }
 
+    if (!routeData.startTime || !routeData.endTime) {
+      onShowNotification('❌ Please specify both start and end times.');
+      return;
+    }
+
+    if (validStops.length === 0) {
+      onShowNotification('❌ Please provide at least one route stop.');
+      return;
+    }
+
+    setIsRegistering(true);
     try {
       const response = await api.driverRegister({
-        name: data.name.trim(),
-        phone: data.phone.trim(),
-        password: data.password,
+        name: accountData.name.trim(),
+        phone: accountData.phone.trim(),
+        password: accountData.password,
         routeId: routeData.routeId.trim(),
         startTime: routeData.startTime,
         endTime: routeData.endTime,
@@ -69,6 +95,8 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
     } catch (error: any) {
       console.error('Registration error:', error);
       onShowNotification(error.message || 'Registration failed. Please try again.');
+    } finally {
+      setIsRegistering(false);
     }
   };
 
@@ -152,7 +180,7 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
           </CardHeader>
           
           <CardContent>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+            <form onSubmit={step === 1 ? handleSubmit(onStep1Submit) : handleFinalSubmit} className="space-y-5">
               
               {step === 1 ? (
                 <>
@@ -368,9 +396,9 @@ export default function DriverRegister({ onShowScreen, onGoBack, onShowNotificat
                   <Button 
                     type="submit" 
                     className="w-full h-12 bg-green-600 hover:bg-green-700 text-white"
-                    disabled={isSubmitting}
+                    disabled={isRegistering}
                   >
-                    {isSubmitting ? 'Creating Account...' : 'Complete Registration'}
+                    {isRegistering ? 'Creating Account...' : 'Complete Registration'}
                   </Button>
                 </div>
               )}
