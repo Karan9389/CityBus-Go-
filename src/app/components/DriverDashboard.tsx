@@ -31,9 +31,6 @@ export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout
         }
         if (data.routeConfig) {
           setRouteConfig(data.routeConfig);
-          if (data.routeConfig.isLive) {
-            setIsSharing(true);
-          }
         }
       } catch (err) {
         console.error('Error loading driver profile:', err);
