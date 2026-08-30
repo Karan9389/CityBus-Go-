@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -28,7 +28,28 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
   const [stops, setStops] = useState<string[]>([]);
   const [newStop, setNewStop] = useState('');
   
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<ConfigFormData>();
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<ConfigFormData>();
+
+  useEffect(() => {
+    async function loadCurrentRoute() {
+      try {
+        const data = await api.getRouteConfig();
+        if (data && data.routeId) {
+          reset({
+            busNumber: data.routeId,
+            startTime: data.startTime || '',
+            endTime: data.endTime || '',
+          });
+          if (Array.isArray(data.stops) && data.stops.length > 0) {
+            setStops(data.stops);
+          }
+        }
+      } catch (err) {
+        // Driver has not configured route yet - standard initial state
+      }
+    }
+    loadCurrentRoute();
+  }, [reset]);
 
   const addStop = () => {
     const stopName = newStop.trim();
