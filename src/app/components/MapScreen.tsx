@@ -66,6 +66,9 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
+      if (mapContainerRef.current && (mapContainerRef.current as any)._leaflet_id) {
+        (mapContainerRef.current as any)._leaflet_id = null;
+      }
 
       // Initialize map instance
       const map = window.L.map(mapContainerRef.current, {
@@ -161,8 +164,8 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
     routeMarkersRef.current = [];
 
     // Approximate stop coordinate spacing based on initial center
-    const baseLat = busLocation ? busLocation.lat : 20.5937;
-    const baseLng = busLocation ? busLocation.lng : 78.9629;
+    const baseLat = busLocation ? busLocation.lat : (routeConfig.lastLocation?.lat || 20.5937);
+    const baseLng = busLocation ? busLocation.lng : (routeConfig.lastLocation?.lng || 78.9629);
 
     const coordinates: [number, number][] = routeConfig.stops.map((_, index) => {
       return [baseLat + (index - Math.floor(routeConfig.stops.length / 2)) * 0.012, baseLng + (index - Math.floor(routeConfig.stops.length / 2)) * 0.015];
