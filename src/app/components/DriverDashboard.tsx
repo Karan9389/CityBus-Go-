@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Avatar, AvatarFallback } from './ui/avatar';
-import { MapPin, Navigation, Square, LogOut, User, Bus, Clock, Route, Edit } from 'lucide-react';
+import { MapPin, Navigation, Square, LogOut, User, Bus, Clock, Route, Edit, Home } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { Screen, Driver, RouteConfig } from '../App';
 import { api } from '../services/api';
@@ -16,7 +16,7 @@ interface DriverDashboardProps {
   onGoHome?: () => void;
 }
 
-export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout }: DriverDashboardProps) {
+export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout, onGoHome }: DriverDashboardProps) {
   const [isSharing, setIsSharing] = useState(false);
   const [locationWatcherId, setLocationWatcherId] = useState<number | null>(null);
   const [routeConfig, setRouteConfig] = useState<RouteConfig | null>(null);
@@ -39,14 +39,17 @@ export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout
     loadProfile();
   }, []);
 
-  // Cleanup geolocation watcher on unmount
+  // Cleanup geolocation watcher and live socket broadcast on unmount
   useEffect(() => {
     return () => {
       if (locationWatcherId !== null) {
         navigator.geolocation.clearWatch(locationWatcherId);
       }
+      if (isSharing && routeConfig?.routeId) {
+        socketService.stopDriverTracking(routeConfig.routeId);
+      }
     };
-  }, [locationWatcherId]);
+  }, [locationWatcherId, isSharing, routeConfig]);
 
   const startSharingLocation = () => {
     if (!routeConfig || !routeConfig.routeId) {
@@ -123,14 +126,28 @@ export default function DriverDashboard({ loggedInDriver, onShowScreen, onLogout
           Edit Route
         </Button>
         <h1 className="font-semibold text-base">Driver Dashboard</h1>
-        <Button 
-          variant="ghost" 
-          size="sm"
-          onClick={handleLogout}
-          className="p-2 hover:bg-gray-100 rounded-full text-red-600"
-        >
-          <LogOut size={18} />
-        </Button>
+        <div className="flex items-center gap-1">
+          {onGoHome && (
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={onGoHome}
+              className="p-2 hover:bg-gray-100 rounded-full"
+              aria-label="Go home"
+            >
+              <Home size={18} />
+            </Button>
+          )}
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={handleLogout}
+            className="p-2 hover:bg-gray-100 rounded-full text-red-600"
+            aria-label="Log out"
+          >
+            <LogOut size={18} />
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 p-6 overflow-y-auto">
