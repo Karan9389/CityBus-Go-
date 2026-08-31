@@ -46,7 +46,8 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
     const initMap = async () => {
       // Ensure Leaflet JS is available
       if (typeof window !== 'undefined' && !window.L) {
-        if (!document.querySelector('script[src*="leaflet.js"]')) {
+        const existingScript = document.querySelector('script[src*="leaflet.js"]');
+        if (!existingScript) {
           const script = document.createElement('script');
           script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
           script.async = true;
@@ -56,6 +57,13 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
             script.onload = () => resolve();
             script.onerror = () => resolve();
           });
+        } else {
+          // If script tag already exists in DOM, wait for window.L to finish initializing
+          let attempts = 0;
+          while (!window.L && attempts < 30) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            attempts++;
+          }
         }
       }
 
@@ -273,8 +281,9 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
       const dLng = (userLocation.lng - busLocation.lng) * 111;
       const dist = Math.sqrt(dLat * dLat + dLng * dLng);
       const timeMin = Math.round((dist / 25) * 60);
+      const distFormatted = dist < 1 ? `${Math.round(dist * 1000)} m` : `${dist.toFixed(1)} km`;
 
-      setEta(timeMin <= 1 ? 'Arriving now (< 1 min)' : `~ ${timeMin} minutes (${dist.toFixed(1)} km)`);
+      setEta(timeMin <= 1 ? `Arriving now (< 1 min • ${distFormatted})` : `~ ${timeMin} mins (${distFormatted})`);
     }
   }, [busLocation, userLocation, etaEnabled]);
 
@@ -300,7 +309,8 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
             const dLng = (longitude - busLocation.lng) * 111;
             const dist = Math.sqrt(dLat * dLat + dLng * dLng);
             const timeMin = Math.round((dist / 25) * 60);
-            setEta(timeMin <= 1 ? 'Arriving now (< 1 min)' : `~ ${timeMin} minutes (${dist.toFixed(1)} km)`);
+            const distFormatted = dist < 1 ? `${Math.round(dist * 1000)} m` : `${dist.toFixed(1)} km`;
+            setEta(timeMin <= 1 ? `Arriving now (< 1 min • ${distFormatted})` : `~ ${timeMin} mins (${distFormatted})`);
           } else {
             setEta('Waiting for bus live signal...');
           }
@@ -331,9 +341,9 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
   };
 
   return (
-    <div className="h-full flex flex-col relative">
+    <div className="h-full flex flex-col relative overflow-hidden">
       {/* Header Overlay */}
-      <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-b from-white via-white/95 to-transparent p-4 max-w-sm mx-auto">
+      <div className="absolute top-0 left-0 right-0 z-30 bg-gradient-to-b from-white via-white/95 to-transparent p-4">
         <div className="flex items-center justify-between mb-2">
           <Button
             variant="ghost"
@@ -387,14 +397,14 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
       </div>
 
       {/* Map Container */}
-      <div className="flex-1 relative pt-32 pb-20">
+      <div className="flex-1 relative w-full h-full pt-32 pb-20">
         <div ref={mapContainerRef} className="w-full h-full" style={{ minHeight: '400px' }} />
       </div>
 
       {/* ETA Display */}
       {eta && (
         <motion.div
-          className="fixed top-36 left-4 right-4 z-40 max-w-sm mx-auto"
+          className="absolute top-36 left-4 right-4 z-30"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -411,7 +421,7 @@ export default function MapScreen({ trackingBus, onShowScreen, onGoBack, onGoHom
       )}
 
       {/* ETA Toggle Button */}
-      <div className="fixed bottom-4 left-4 right-4 z-50 max-w-sm mx-auto">
+      <div className="absolute bottom-4 left-4 right-4 z-30">
         <div className="flex gap-2">
           <Button
             onClick={handleToggleETA}
