@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
-import { ArrowLeft, Bus, Clock, MapPin, Plus, X, Save } from 'lucide-react';
+import { ArrowLeft, Bus, Clock, MapPin, Plus, X, Save, Home } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useForm } from 'react-hook-form';
 import type { Screen, Driver } from '../App';
@@ -24,7 +24,7 @@ interface ConfigFormData {
   endTime: string;
 }
 
-export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, onShowNotification }: DriverConfigProps) {
+export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, onShowNotification, onGoHome }: DriverConfigProps) {
   const [stops, setStops] = useState<string[]>([]);
   const [newStop, setNewStop] = useState('');
   
@@ -67,7 +67,12 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
     const cleanBusNumber = data.busNumber.trim();
     const cleanStartTime = data.startTime.trim();
     const cleanEndTime = data.endTime.trim();
-    const validStops = stops.map(s => s.trim()).filter(Boolean);
+    
+    // Automatically include any pending input in newStop
+    const combinedStops = newStop.trim() && !stops.map(s => s.toLowerCase()).includes(newStop.trim().toLowerCase())
+      ? [...stops, newStop.trim()]
+      : stops;
+    const validStops = combinedStops.map(s => s.trim()).filter(Boolean);
 
     if (!cleanBusNumber) {
       onShowNotification("Please enter a valid Route / Bus Number.");
@@ -104,22 +109,31 @@ export default function DriverConfig({ loggedInDriver, onShowScreen, onGoBack, o
     <div className="h-full flex flex-col p-6">
       
       {/* Header */}
-      <div className="flex items-center mb-8">
+      <div className="flex items-center justify-between mb-6">
         <Button 
           variant="ghost" 
           size="sm"
           onClick={onGoBack}
-          className="p-2 hover:bg-gray-100 rounded-full mr-4"
+          className="p-2 hover:bg-gray-100 rounded-full"
+          aria-label="Go back"
         >
           <ArrowLeft size={20} />
         </Button>
-        <div className="flex-1 text-center">
-          <div className="mx-auto bg-blue-100 rounded-full p-4 w-fit mb-4">
-            <Bus className="text-blue-600" size={32} />
-          </div>
-          <h2 className="font-bold text-xl">Configure Your Route</h2>
-          <p className="text-muted-foreground mt-2">Set up your bus route and schedule</p>
+        <div className="text-center flex-1">
+          <h2 className="font-bold text-lg">Configure Route</h2>
+          <p className="text-muted-foreground text-xs">Set up your bus route and schedule</p>
         </div>
+        {onGoHome ? (
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={onGoHome}
+            className="p-2 hover:bg-gray-100 rounded-full"
+            aria-label="Go home"
+          >
+            <Home size={20} />
+          </Button>
+        ) : <div className="w-8" />}
       </div>
 
       {/* Configuration Form */}
