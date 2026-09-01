@@ -59,7 +59,12 @@ export interface RouteConfig {
   endTime: string;
   stops: string[];
   isLive?: boolean;
-  driver?: { name: string; phone: string };
+  driver?: { id?: string; name: string; phone: string };
+  lastLocation?: {
+    lat?: number;
+    lng?: number;
+    updatedAt?: string | Date;
+  };
 }
 
 export interface LocationData {
